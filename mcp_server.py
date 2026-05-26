@@ -1,22 +1,73 @@
 """AgentLink-Visa MCP server entrypoint.
 
-Run with: uv run mcp_server.py
-Or configure in .mcp.json as: {"command": "uv", "args": ["run", "mcp_server.py"]}
+Installed as the 'agentlink-mcp' console script via pip install.
+Configure in your MCP client as: {"command": "agentlink-mcp"}
 """
 
 from fastmcp import FastMCP
 from agentlink.tools import connect, disconnect, query, write
 
-mcp = FastMCP("agentlink-visa")
+_INSTRUCTIONS = """
+You are operating AgentLink-Visa, an MCP server for direct AI agent control of
+test and measurement instruments via VISA/SCPI.
+
+## Your role in instrument setup
+
+You own the instrument configuration. Users should not need to create or edit
+config files manually. When a user mentions an instrument or asks to connect:
+
+1. Run `agentlink list` (via Bash) to check for existing configs.
+2. If no config exists, discover connected instruments:
+   python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
+   The output is a tuple of VISA resource strings, e.g.:
+   ('USB0::0x0699::0x0527::C012345::INSTR',)
+   If the tuple is empty, the instrument may be off, disconnected, or require a
+   driver — diagnose before asking the user.
+3. Write the config file to ~/.agentlink/instruments/<alias>.toml.
+   Use the manufacturer and model from the IDN response or the user's description.
+   Default termination values work for most instruments:
+     read_termination = "\\n"
+     write_termination = "\\n"
+4. If techmanual.ai is available, search for the model number and extract the
+   document_id from the results. Add it to the config as techmanual_document_id.
+   This lets future sessions skip the search and go directly to the manual.
+5. Call connect_instrument(alias) to open the session and confirm.
+
+## Config file format
+
+~/.agentlink/instruments/<alias>.toml — one file per instrument.
+
+Required: alias, resource_string, manufacturer, model_number, timeout_ms,
+          read_termination, write_termination
+Optional: description, techmanual_document_id
+
+## Troubleshooting — resolve before escalating to the user
+
+- Config missing: create it (step 2-3 above).
+- VISA timeout: try increasing timeout_ms (e.g. 10000) and reconnect.
+- Resource string wrong: re-run list_resources() and update the config.
+- list_resources() empty: check power, cable, and OS USB permissions.
+  On Windows, USB instruments require libusb (pip install libusb-package).
+- Session already open: call disconnect_instrument() first.
+
+Only surface an issue to the user if it requires physical action they must take
+themselves (e.g. powering on the instrument, plugging in a cable).
+"""
+
+mcp = FastMCP("agentlink-visa", instructions=_INSTRUCTIONS)
 
 
 @mcp.tool()
 def connect_instrument(alias: str) -> dict:
     """Open a VISA session to a configured instrument and verify with *IDN?.
 
-    The instrument must have a config file at ~/.agentlink/instruments/<alias>.toml.
-    Returns instrument identity info and the techmanual_document_id if configured,
-    which can be used to look up the instrument manual via techmanual.ai.
+    Before calling this, ensure ~/.agentlink/instruments/<alias>.toml exists.
+    If it does not, create it — do not ask the user to do so. See server
+    instructions for the full setup sequence.
+
+    On success, the response includes techmanual_document_id if set in the config.
+    If it is null and techmanual.ai is available, search for the model number,
+    extract the document_id, update the config file, and note it for future sessions.
 
     Args:
         alias: Instrument alias matching the config filename (e.g. 'tek_mso44').

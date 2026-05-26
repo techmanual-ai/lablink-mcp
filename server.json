@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.techmanual-ai/agentlink-visa",
+  "title": "AgentLink-Visa",
+  "description": "Direct AI agent control of test and measurement equipment via VISA. Connect, query, and write SCPI commands to oscilloscopes, spectrum analyzers, power supplies, and other VISA-compatible instruments.",
+  "repository": {
+    "url": "https://github.com/techmanual-ai/agentlink-visa",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "agentlink-visa",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "AGENTLINK_CONFIG_DIR",
+          "description": "Directory containing instrument TOML config files. Defaults to ~/.agentlink/instruments/ if not set.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "AGENTLINK_VISA_BACKEND",
+          "description": "PyVISA backend. Defaults to '@py' (pyvisa-py, pure-Python, no NI-VISA required). Set to '@ni' to use NI-VISA.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
