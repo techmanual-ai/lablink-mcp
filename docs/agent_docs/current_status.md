@@ -1,18 +1,20 @@
 # Project Status
 
 ## Current Phase
-**Phase 0: Scaffolding**
+**Phase 1: MVP Complete**
 
-Repository initialized. `docs/agent_docs/` scaffolded. No application code written yet.
+All v0.1 application code written and tested. MCP server, CLI, and core library are ready for hardware validation.
 
 ---
 
 ## Technical Debt & Known Issues
 
-*None yet.*
+- CLI `connect`/`query`/`write` subcommands open and close a session per invocation. This is intentional for debug UX but means the session is not persistent across CLI calls (only across MCP calls). Not a concern for v0.1.
 
 ---
 
 ## Recent History
 
+- **2026-05-26** — **[Bugfix/Polish]** Pre-hardware audit pass. Fixed CLI double command registration (commands now registered once via `name=` arg on decorator, removed redundant `cli.add_command` block). Fixed `ResourceManager` leak in `session.py` (now cached as module-level singleton). Fixed silent double-connect overwrite: `connect()` returns a structured error if a session is already open for the alias, guarded by new `session.is_connected()` helper. Added broken-config warnings to `agentlink list` — files that fail validation now print to stderr instead of silently disappearing. Added `pytest>=8.0` as `[dev]` optional dependency in `pyproject.toml`. Updated README: `uv pip install -e .` step added, `uv run python -c ...` for resource string discovery, MCP setup now covers both Claude Code (`.mcp.json`) and Claude Desktop (`claude_desktop_config.json`) with reliable `uv --directory` invocation pattern. 17/17 tests passing.
+- **2026-05-26** — **[MVP]** Full v0.1 implementation complete. Built: `agentlink/exceptions.py`, `agentlink/config.py`, `agentlink/session.py`, `agentlink/tools.py`, `mcp_server.py`, `cli.py`, `tests/test_tools.py`, `examples/instruments/example_scope.toml`, `pyproject.toml`, `requirements.txt`, `.env.example`, `README.md`. 16/16 unit tests passing (all mocked, no hardware required).
 - **2026-05-26** — **[Bootstrap]** Repository created. `agent-bootstrap.md` written by lead developer establishing founding design decisions. `docs/agent_docs/` scaffolded: `readme_agent.md`, `project_goal.md`, `agent_development.md`, `current_status.md`, `system_architecture.md`. No application code yet.

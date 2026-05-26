@@ -1,0 +1,5 @@
+fastmcp>=2.0
+pyvisa>=1.14
+pyvisa-py>=0.7
+click>=8.0
+tomli>=2.0; python_version < "3.11"

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentlink-visa"
+version = "0.1.0"
+description = "MCP server for AI agent control of test and measurement equipment via PyVISA"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.0",
+    "pyvisa>=1.14",
+    "pyvisa-py>=0.7",
+    "click>=8.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.scripts]
+agentlink = "cli:cli"
+agentlink-mcp = "mcp_server:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.hatch.build.targets.wheel]
+include = ["agentlink/", "mcp_server.py", "cli.py"]

@@ -1,0 +1,24 @@
+# Example instrument config for a Tektronix MSO44 oscilloscope.
+# Copy to ~/.agentlink/instruments/<alias>.toml and update for your hardware.
+#
+# Find your resource string by running:
+#   python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
+
+# --- Required fields ---
+
+alias = "tek_mso44"
+resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
+manufacturer = "Tektronix"
+model_number = "MSO44"
+timeout_ms = 5000
+read_termination = "\n"
+write_termination = "\n"
+
+# --- Optional fields ---
+
+# Direct link to this instrument's manual in techmanual.ai.
+# When present, the agent can look up the manual without a search query.
+# techmanual_document_id = 142
+
+# Human-readable description for 'agentlink list' output.
+# description = "4-channel mixed signal oscilloscope, bench 3"
