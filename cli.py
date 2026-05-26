@@ -4,10 +4,11 @@ Thin wrappers over the same core functions used by the MCP tools.
 Intended for development, debugging, and instrument config validation.
 
 Usage:
+    agentlink list
+    agentlink diagnose [alias]
     agentlink connect <alias>
     agentlink query <alias> "<command>"
     agentlink write <alias> "<command>"
-    agentlink list
 """
 
 import json
@@ -15,7 +16,9 @@ import sys
 
 import click
 
-from agentlink.config import list_configs
+from agentlink.config import get_config_dir, list_configs, load_config
+from agentlink.diagnostics import run_diagnostics
+from agentlink.exceptions import ConfigError
 from agentlink.tools import connect, disconnect, query, write
 
 
@@ -99,36 +102,54 @@ def write_cmd(alias: str, command: str) -> None:
 @cli.command(name="list")
 def list_cmd() -> None:
     """List all configured instrument aliases."""
-    from agentlink.config import get_config_dir, load_config
-    from agentlink.exceptions import ConfigError
-
     config_dir = get_config_dir()
-    configs = list_configs()
 
-    if not configs and (not config_dir.exists() or not list(config_dir.glob("*.toml"))):
-        click.echo("No instrument configs found.", err=True)
-        click.echo(
-            "Add a <alias>.toml file to ~/.agentlink/instruments/ to get started.",
-            err=True,
-        )
+    if not config_dir.exists():
+        click.echo(f"Config directory not found: {config_dir}", err=True)
+        click.echo("Create it with: mkdir -p ~/.agentlink/instruments", err=True)
         sys.exit(1)
 
-    for cfg in configs:
-        click.echo(f"{cfg.alias}")
-        click.echo(f"  {cfg.manufacturer} {cfg.model_number}", err=True)
-        click.echo(f"  {cfg.resource_string}", err=True)
-        if cfg.description:
-            click.echo(f"  {cfg.description}", err=True)
+    toml_files = sorted(config_dir.glob("*.toml"))
+    if not toml_files:
+        click.echo("No instrument configs found.", err=True)
+        click.echo("Add a <alias>.toml to ~/.agentlink/instruments/ to get started.", err=True)
+        sys.exit(1)
 
-    # Warn about any TOML files that failed to load
-    if config_dir.exists():
-        loaded_aliases = {cfg.alias for cfg in configs}
-        for toml_file in sorted(config_dir.glob("*.toml")):
-            if toml_file.stem not in loaded_aliases:
-                try:
-                    load_config(toml_file.stem)
-                except ConfigError as exc:
-                    click.echo(f"Warning: {toml_file.name}: {exc}", err=True)
+    found_any = False
+    for toml_file in toml_files:
+        try:
+            cfg = load_config(toml_file.stem)
+            click.echo(f"{cfg.alias}  {cfg.manufacturer} {cfg.model_number}  {cfg.resource_string}")
+            if cfg.description:
+                click.echo(f"  {cfg.description}")
+            found_any = True
+        except ConfigError as exc:
+            click.echo(f"Warning: {toml_file.name}: {exc}", err=True)
+
+    if not found_any:
+        sys.exit(1)
+
+
+@cli.command(name="diagnose")
+@click.argument("alias", required=False, default=None)
+def diagnose_cmd(alias: str | None) -> None:
+    """Run connection diagnostics, optionally for a specific ALIAS.
+
+    Checks pyvisa installation, VISA backend health, detected resources,
+    and (when ALIAS is given) config validity and interface reachability.
+    """
+    import json
+
+    report = run_diagnostics(alias)
+
+    if report["ready"]:
+        click.echo("All checks passed. Ready to connect.")
+    else:
+        click.echo(f"{len(report['action_items'])} issue(s) found:", err=True)
+        for i, item in enumerate(report["action_items"], 1):
+            click.echo(f"  {i}. {item}", err=True)
+
+    click.echo(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,3 @@ class ConfigError(Exception):
 
 class SessionError(Exception):
     """Raised when a tool is called for an alias with no open VISA session."""
-
-
-class QueryError(Exception):
-    """Raised on VISA-level communication failures before conversion to a structured error dict."""

@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentlink.exceptions import ConfigError
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -280,3 +282,224 @@ class TestWrite:
 
         assert result["success"] is False
         assert "VISA I/O error" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# tools.connect — session leak regression
+# ---------------------------------------------------------------------------
+
+class TestConnectSessionLeak:
+    def test_idn_failure_cleans_up_session(self):
+        """If *IDN? raises after open_session succeeds, the alias must not
+        remain stuck in _sessions."""
+        import pyvisa
+        from agentlink import tools
+        from agentlink import session as _session
+
+        config = _make_config()
+        resource = MagicMock()
+        resource.query.side_effect = pyvisa.Error("timeout")
+
+        with patch("agentlink.tools.load_config", return_value=config), \
+             patch("agentlink.tools._session.open_session", return_value=resource), \
+             patch("agentlink.tools._session.is_connected", return_value=False), \
+             patch("agentlink.tools._session.close_session") as mock_close:
+            result = tools.connect("test_scope")
+
+        assert result["success"] is False
+        mock_close.assert_called_once_with(config.alias)
+
+    def test_open_session_failure_does_not_call_close(self):
+        """If open_session itself raises, there is nothing to close."""
+        import pyvisa
+        from agentlink import tools
+
+        config = _make_config()
+
+        with patch("agentlink.tools.load_config", return_value=config), \
+             patch("agentlink.tools._session.is_connected", return_value=False), \
+             patch("agentlink.tools._session.open_session", side_effect=pyvisa.Error("no device")), \
+             patch("agentlink.tools._session.close_session") as mock_close:
+            result = tools.connect("test_scope")
+
+        assert result["success"] is False
+        # close_session is still called (safe to call even if open failed,
+        # it silently ignores the SessionError in the cleanup path)
+        mock_close.assert_called_once_with(config.alias)
+
+
+# ---------------------------------------------------------------------------
+# diagnostics tests
+# ---------------------------------------------------------------------------
+
+class TestDiagnostics:
+    def _mock_rm(self, resources=("USB0::0x1::0x2::A::INSTR",)):
+        rm = MagicMock()
+        rm.list_resources.return_value = resources
+        return rm
+
+    def test_basic_report_structure(self):
+        from agentlink import diagnostics
+
+        rm = self._mock_rm()
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+            report = diagnostics.run_diagnostics()
+
+        assert "system" in report
+        assert "dependencies" in report
+        assert "visa" in report
+        assert "interfaces" in report
+        assert "config_dir" in report
+        assert "action_items" in report
+        assert "ready" in report
+        assert "alias_check" not in report
+
+    def test_no_resources_adds_action_item(self):
+        from agentlink import diagnostics
+
+        rm = self._mock_rm(resources=())
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+            report = diagnostics.run_diagnostics()
+
+        assert not report["ready"]
+        assert any("No VISA resources" in item for item in report["action_items"])
+
+    def test_resource_manager_failure_adds_action_item(self):
+        from agentlink import diagnostics
+        import pyvisa
+
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", side_effect=pyvisa.Error("backend missing")):
+            report = diagnostics.run_diagnostics()
+
+        assert not report["visa"]["resource_manager_ok"]
+        assert any("ResourceManager" in item for item in report["action_items"])
+
+    def test_usb_resource_categorised(self):
+        from agentlink import diagnostics
+
+        rm = self._mock_rm(resources=("USB0::0x0699::0x1::C1::INSTR",))
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+            report = diagnostics.run_diagnostics()
+
+        assert len(report["interfaces"]["usb"]["resources"]) == 1
+        assert report["interfaces"]["gpib"]["resources"] == []
+        assert report["interfaces"]["lan"]["resources"] == []
+
+    def test_alias_check_config_missing(self, tmp_path):
+        from agentlink import diagnostics
+        import agentlink.config as cfg_module
+
+        rm = self._mock_rm()
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch.object(cfg_module, "get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", side_effect=ConfigError("not found")):
+            report = diagnostics.run_diagnostics(alias="missing")
+
+        assert "alias_check" in report
+        assert not report["alias_check"]["config_ok"]
+        assert any("Config for" in item for item in report["action_items"])
+
+    def test_alias_check_usb_in_list(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        rs = "USB0::0x0699::0x0527::C012345::INSTR"
+        config = InstrumentConfig(
+            alias="test_scope", resource_string=rs,
+            manufacturer="Tektronix", model_number="MSO44",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = self._mock_rm(resources=(rs,))
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config):
+            report = diagnostics.run_diagnostics(alias="test_scope")
+
+        assert report["alias_check"]["config_ok"]
+        assert report["alias_check"]["interface_type"] == "USB"
+        assert report["alias_check"]["in_visa_list"] is True
+
+    def test_alias_check_usb_not_in_list_adds_action(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        config = InstrumentConfig(
+            alias="test_scope",
+            resource_string="USB0::0x0699::0x0527::C012345::INSTR",
+            manufacturer="Tektronix", model_number="MSO44",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = self._mock_rm(resources=())
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config):
+            report = diagnostics.run_diagnostics(alias="test_scope")
+
+        assert report["alias_check"]["in_visa_list"] is False
+        assert any("USB resource" in item for item in report["action_items"])
+
+    def test_alias_check_tcpip_ping_ok_port_closed(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        config = InstrumentConfig(
+            alias="lan_scope",
+            resource_string="TCPIP0::192.168.1.100::INSTR",
+            manufacturer="Keysight", model_number="DSOX1204G",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = self._mock_rm(resources=())
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config), \
+             patch("agentlink.diagnostics._ping", return_value=True), \
+             patch("agentlink.diagnostics._port_open", return_value=False):
+            report = diagnostics.run_diagnostics(alias="lan_scope")
+
+        assert report["alias_check"]["tcpip_host"] == "192.168.1.100"
+        assert report["alias_check"]["ping_ok"] is True
+        assert report["alias_check"]["scpi_port_5025_open"] is False
+        assert any("port 5025" in item for item in report["action_items"])
+
+    def test_alias_check_tcpip_no_ping(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        config = InstrumentConfig(
+            alias="lan_scope",
+            resource_string="TCPIP::10.0.0.5::INSTR",
+            manufacturer="Keysight", model_number="DSOX1204G",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = self._mock_rm(resources=())
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config), \
+             patch("agentlink.diagnostics._ping", return_value=False), \
+             patch("agentlink.diagnostics._port_open", return_value=False):
+            report = diagnostics.run_diagnostics(alias="lan_scope")
+
+        assert report["alias_check"]["ping_ok"] is False
+        assert any("ping" in item.lower() for item in report["action_items"])
+
+    def test_ready_true_when_no_issues(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        rs = "USB0::0x0699::0x0527::C012345::INSTR"
+        config = InstrumentConfig(
+            alias="test_scope", resource_string=rs,
+            manufacturer="Tektronix", model_number="MSO44",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        toml_file = tmp_path / "test_scope.toml"
+        toml_file.write_text("")  # just needs to exist for the count
+        rm = self._mock_rm(resources=(rs,))
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config):
+            report = diagnostics.run_diagnostics(alias="test_scope")
+
+        assert report["ready"] is True
+        assert report["action_items"] == []

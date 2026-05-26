@@ -5,6 +5,7 @@ Configure in your MCP client as: {"command": "agentlink-mcp"}
 """
 
 from fastmcp import FastMCP
+from agentlink.diagnostics import run_diagnostics
 from agentlink.tools import connect, disconnect, query, write
 
 _INSTRUCTIONS = """
@@ -43,15 +44,21 @@ Optional: description, techmanual_document_id
 
 ## Troubleshooting — resolve before escalating to the user
 
-- Config missing: create it (step 2-3 above).
-- VISA timeout: try increasing timeout_ms (e.g. 10000) and reconnect.
+Run diagnose_connection(alias) first. It checks dependencies, the VISA
+backend, available resources, and interface-specific reachability (ping,
+SCPI port, USB presence, GPIB detection). Use its action_items list to
+guide the user step by step.
+
+Common issues:
+- Config missing: create it (steps 2-3 above).
+- VISA timeout: increase timeout_ms (e.g. 10000) in the config and reconnect.
 - Resource string wrong: re-run list_resources() and update the config.
 - list_resources() empty: check power, cable, and OS USB permissions.
   On Windows, USB instruments require libusb (pip install libusb-package).
 - Session already open: call disconnect_instrument() first.
 
-Only surface an issue to the user if it requires physical action they must take
-themselves (e.g. powering on the instrument, plugging in a cable).
+Only surface an issue to the user if it requires physical action they must
+take themselves (e.g. powering on the instrument, plugging in a cable).
 """
 
 mcp = FastMCP("agentlink-visa", instructions=_INSTRUCTIONS)
@@ -111,6 +118,31 @@ def write_instrument(alias: str, command: str) -> dict:
         command: SCPI command string (e.g. 'CH1:SCALE 0.5').
     """
     return write(alias, command)
+
+
+@mcp.tool()
+def diagnose_connection(alias: str | None = None) -> dict:
+    """Check dependencies, VISA backend, and hardware reachability.
+
+    Run this first when a user has trouble connecting to an instrument.
+    Returns a structured report with a ready flag and an action_items list
+    of concrete steps the user should take to resolve any issues found.
+
+    Checks performed:
+    - pyvisa and pyvisa-py installation and versions
+    - VISA ResourceManager creation (backend health)
+    - list_resources() output (what instruments are visible)
+    - Detected interface types: USB, GPIB, LAN, Serial
+    - Instrument config directory existence and contents
+    - When alias is provided: config validity, interface type, USB presence
+      in resource list, TCPIP ping and SCPI port 5025 reachability, or
+      GPIB adapter detection.
+
+    Args:
+        alias: Optional instrument alias to include targeted checks for that
+               specific instrument's config and connection path.
+    """
+    return run_diagnostics(alias)
 
 
 def main() -> None:

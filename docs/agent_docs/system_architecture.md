@@ -30,7 +30,8 @@ agentlink-visa/
 │   ├── config.py                   # Config loader: reads <alias>.toml, validates required fields
 │   ├── session.py                  # VISA session lifecycle: open, close, module-level session dict
 │   ├── tools.py                    # MCP tool implementations (connect, disconnect, query, write)
-│   └── exceptions.py               # Typed exceptions (ConfigError, SessionError, QueryError)
+│   ├── diagnostics.py              # Connection diagnostics: deps, VISA backend, resource discovery, reachability
+│   └── exceptions.py               # Typed exceptions (ConfigError, SessionError)
 ├── mcp_server.py                   # FastMCP entrypoint (stdio)
 ├── cli.py                          # Click CLI entrypoint
 ├── tests/
@@ -66,28 +67,30 @@ Implements the four v0.1 tools. All call into `config.py` and `session.py`; none
 
 | Tool | Behavior |
 |------|----------|
-| `connect(alias)` | Load config → open session → send `*IDN?` → return instrument info dict |
+| `connect(alias)` | Load config → open session → send `*IDN?` → return instrument info dict. On IDN failure, cleans up the orphaned session before returning error. |
 | `disconnect(alias)` | Close session → return success dict |
 | `query(alias, command)` | Get session → `resource.query(command)` → return response string |
 | `write(alias, command)` | Get session → `resource.write(command)` → return success dict |
 
 All tools catch `pyvisa` exceptions and return structured error dicts (`{"success": false, "error": "...", "hint": "..."}`) rather than raising.
 
-### D. MCP Server (`mcp_server.py`)
+### D. Diagnostics (`agentlink/diagnostics.py`)
+`run_diagnostics(alias=None)` — checks installed dependencies, VISA backend health, detected resources by interface type (USB/GPIB/TCPIP/serial), config directory status, and (when alias is provided) alias-specific reachability: USB presence in resource list, TCPIP ping + port 5025 check, GPIB adapter detection. Returns a structured dict with `ready: bool` and `action_items: list[str]` of concrete user-facing steps. Exposed as the `diagnose_connection` MCP tool and `agentlink diagnose [alias]` CLI command.
+
+### E. MCP Server (`mcp_server.py`)
 - FastMCP entrypoint over stdio.
 - Registers the four tools from `agentlink/tools.py`.
 - Entry point: `uv run mcp_server.py` or configured in `.mcp.json`.
 
-### E. CLI (`cli.py`)
+### F. CLI (`cli.py`)
 - Click group with four subcommands: `connect`, `query`, `write`, `list`.
 - Thin wrappers over the same core functions used by MCP tools.
 - Diagnostic output to stderr; command output to stdout.
 - Intended for development, debugging, and instrument config validation — not for production agent use.
 
-### F. Exceptions (`agentlink/exceptions.py`)
+### G. Exceptions (`agentlink/exceptions.py`)
 - `ConfigError` — raised on invalid or missing config fields.
 - `SessionError` — raised when a tool is called for an alias with no open session.
-- `QueryError` — raised on VISA-level communication failures (before being caught and converted to a structured error dict at the tool layer).
 
 ---
 

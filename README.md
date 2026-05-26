@@ -100,6 +100,7 @@ After restarting your MCP client, ask your agent to run `connect_instrument("tek
 
 | Tool | Description |
 |------|-------------|
+| `diagnose_connection(alias?)` | Check deps, VISA backend, hardware reachability. Run this first when troubleshooting. |
 | `connect_instrument(alias)` | Open VISA session, verify with `*IDN?`, return instrument info |
 | `disconnect_instrument(alias)` | Close VISA session |
 | `query_instrument(alias, command)` | Send SCPI query, return response string |
@@ -149,13 +150,15 @@ export AGENTLINK_CONFIG_DIR=/path/to/your/instruments/
 The CLI is a development and debugging tool — not intended for production agent use.
 
 ```bash
-agentlink list                          # list all configured instruments
-agentlink connect tek_mso44             # open session, print IDN
-agentlink query tek_mso44 "MEAS:FREQ? CH1"  # send query, print response
-agentlink write tek_mso44 "CH1:SCALE 0.5"   # send command
+agentlink list                              # list all configured instruments
+agentlink diagnose                          # check VISA backend and available resources
+agentlink diagnose tek_mso44               # add alias-specific reachability checks
+agentlink connect tek_mso44                # open session, print IDN
+agentlink query tek_mso44 "MEAS:FREQ? CH1" # send query, print response
+agentlink write tek_mso44 "CH1:SCALE 0.5"  # send command
 ```
 
-Diagnostic output goes to stderr; command output goes to stdout.
+`diagnose` prints a human-readable issue list to stderr and the full JSON report to stdout. Run it first if `connect` fails.
 
 ---
 

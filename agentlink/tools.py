@@ -47,6 +47,12 @@ def connect(alias: str) -> dict[str, Any]:
         resource = _session.open_session(config)
         idn = resource.query("*IDN?").strip()
     except pyvisa.Error as exc:
+        # open_session() registers the session before IDN runs; clean it up
+        # so the alias is not left in a stuck state.
+        try:
+            _session.close_session(config.alias)
+        except Exception:
+            pass
         return {
             "success": False,
             "error": f"VISA error: {exc}",
