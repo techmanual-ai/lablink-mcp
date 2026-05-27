@@ -55,6 +55,7 @@ agentlink-visa/
 - Validates required fields at load time; raises `ConfigError` with a clear message on missing fields.
 - Returns a typed config dataclass used by session and tool modules.
 - The `techmanual_document_id` optional field is passed through to MCP tool responses to enable agent-directed manual lookups.
+- `load_instrument_memory(alias)` reads `<config_dir>/<alias>.md` and returns its content, or `None` if the file does not exist. Never raises.
 
 ### B. Session Manager (`agentlink/session.py`)
 - Maintains a module-level dict of open VISA sessions keyed by alias: `_sessions: dict[str, pyvisa.Resource]`.
@@ -68,7 +69,7 @@ Implements the four v0.1 tools. All call into `config.py` and `session.py`; none
 
 | Tool | Behavior |
 |------|----------|
-| `connect(alias)` | Load config → open session → send `*IDN?` → return instrument info dict. On IDN failure, cleans up the orphaned session before returning error. |
+| `connect(alias)` | Load config → open session → send `*IDN?` → return instrument info dict including `instrument_memory`. On IDN failure, cleans up the orphaned session before returning error. |
 | `disconnect(alias)` | Close session → return success dict |
 | `query(alias, command)` | Get session → `resource.query(command)` → return response string |
 | `write(alias, command)` | Get session → `resource.write(command)` → return success dict |
@@ -146,6 +147,9 @@ $ agentlink list
 
 ### Instrument Config (`~/.agentlink/instruments/<alias>.toml`)
 One file per instrument. Required and optional fields documented in `project_goal.md` §2.3.
+
+### Instrument Memory (`~/.agentlink/instruments/<alias>.md`)
+Optional. Agent-maintained Markdown file of device-specific quirks and workarounds. Created and appended by agents when they encounter non-obvious device issues. Returned as `instrument_memory` in `connect()` and `diagnose_connection()` (alias_check) responses. Format: `## category` headers with one-line bullet entries per quirk.
 
 ### VISA Backend (`~/.agentlink/visa.toml` or `AGENTLINK_VISA_BACKEND` env var)
 Optional. Overrides the default pyvisa-py backend. Document both setup paths in the README — this is the #1 setup friction point.

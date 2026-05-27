@@ -60,6 +60,37 @@ Common issues:
 Only surface an issue to the user if it requires physical action they must
 take themselves (e.g. powering on the instrument, plugging in a cable).
 
+## Instrument Memory
+
+Each instrument may have a memory file at
+~/.agentlink/instruments/<alias>.md containing device-specific quirks,
+failure modes, and workarounds documented by previous agents.
+
+`connect_instrument` always returns an `instrument_memory` field — read it
+before issuing any commands. `diagnose_connection` returns the same field
+inside `alias_check` when a valid config is found — read it before
+suggesting troubleshooting steps, as the fix may already be documented.
+
+**When to add an entry:** Only when you spent meaningful time on a
+non-obvious device-specific issue that would cost a future agent the same
+time. Do not add entries for normal SCPI operation.
+
+**Format — strictly enforced:**
+- File header: `# <alias> — Instrument Memory`
+- One `## <category>` section per topic (e.g., `cursor`, `trigger`,
+  `firmware`, `recovery`, `programming_guide`)
+- One bullet per quirk, single line:
+  `` `affected_command` — symptom — root cause — workaround ``
+- No prose paragraphs. No multi-line entries.
+
+Example entry:
+```
+## cursor
+- `CURSOR_X1?` timeout: SDS1104X-E older cursor arch not in prog guide doc 1323; writes work, readback does not → use `PAVA FREQ` for period
+```
+
+Write the file directly: ~/.agentlink/instruments/<alias>.md
+
 ## VISA/SCPI Behavior
 
 VISA is a synchronous, session-based protocol. Internalize these behaviors
@@ -108,9 +139,9 @@ def connect_instrument(alias: str) -> dict:
     If it does not, create it — do not ask the user to do so. See server
     instructions for the full setup sequence.
 
-    On success, the response includes techmanual_document_id if set in the config.
-    If it is null and techmanual.ai is available, search for the model number,
-    extract the document_id, update the config file, and note it for future sessions.
+    On success, the response includes techmanual_document_id (update config if null)
+    and instrument_memory (device-specific quirks from previous sessions, or null).
+    Read instrument_memory before issuing any commands.
 
     Args:
         alias: Instrument alias matching the config filename (e.g. 'tek_mso44').
@@ -161,8 +192,10 @@ def diagnose_connection(alias: str | None = None) -> dict:
     """Check dependencies, VISA backend, and hardware reachability.
 
     Run this first when a user has trouble connecting to an instrument.
-    Returns a structured report with a ready flag and an action_items list
-    of concrete steps the user should take to resolve any issues found.
+    Returns a structured report with a ready flag, an action_items list of
+    concrete steps to resolve issues, and (when alias is provided and config
+    is valid) instrument_memory with device-specific quirks from prior sessions.
+    Read instrument_memory before suggesting troubleshooting steps.
 
     Checks performed:
     - pyvisa and pyvisa-py installation and versions

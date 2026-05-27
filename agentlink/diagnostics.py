@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 import pyvisa
 
-from agentlink.config import get_config_dir, load_config
+from agentlink.config import get_config_dir, load_config, load_instrument_memory
 from agentlink.exceptions import ConfigError
 
 
@@ -264,6 +264,9 @@ def run_diagnostics(alias: Optional[str] = None) -> dict[str, Any]:
                 f"Config for '{alias}' failed to load: {exc}. "
                 f"Ensure ~/.agentlink/instruments/{alias}.toml exists and has all required fields."
             )
+
+        if alias_check.get("config_ok"):
+            alias_check["instrument_memory"] = load_instrument_memory(alias)
 
         report["alias_check"] = alias_check
 

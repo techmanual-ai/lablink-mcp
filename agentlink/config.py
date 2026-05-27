@@ -94,6 +94,23 @@ def load_config(alias: str) -> InstrumentConfig:
     )
 
 
+def load_instrument_memory(alias: str) -> Optional[str]:
+    """Return the instrument memory file content for the given alias, or None.
+
+    The memory file (~/.agentlink/instruments/<alias>.md) is an optional
+    agent-maintained document of device-specific quirks and workarounds.
+    Returns None if the file does not exist. Never raises.
+
+    Args:
+        alias: Instrument alias matching the config filename.
+    """
+    memory_path = get_config_dir() / f"{alias}.md"
+    try:
+        return memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
+    except Exception:
+        return None
+
+
 def list_configs() -> list[InstrumentConfig]:
     """Return all valid instrument configs in the config directory.
 

@@ -329,6 +329,118 @@ class TestConnectSessionLeak:
 
 
 # ---------------------------------------------------------------------------
+# instrument memory tests
+# ---------------------------------------------------------------------------
+
+class TestInstrumentMemory:
+    def test_load_returns_none_when_no_file(self, tmp_path):
+        import agentlink.config as cfg_module
+
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            assert cfg_module.load_instrument_memory("test_scope") is None
+
+    def test_load_returns_content_when_file_exists(self, tmp_path):
+        import agentlink.config as cfg_module
+
+        memory_content = "# test_scope — Instrument Memory\n\n## cursor\n- `X1?` timeout\n"
+        (tmp_path / "test_scope.md").write_text(memory_content, encoding="utf-8")
+
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            result = cfg_module.load_instrument_memory("test_scope")
+
+        assert result == memory_content
+
+    def test_connect_includes_instrument_memory(self, tmp_path):
+        import agentlink.config as cfg_module
+        from agentlink import tools
+
+        memory_content = "# test_scope — Instrument Memory\n\n## firmware\n- quirk\n"
+        (tmp_path / "test_scope.toml").write_bytes(b"")  # not used — load_config mocked
+        config = _make_config()
+        resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
+
+        with patch("agentlink.tools.load_config", return_value=config), \
+             patch("agentlink.tools._session.open_session", return_value=resource), \
+             patch("agentlink.tools.load_instrument_memory", return_value=memory_content):
+            result = tools.connect("test_scope")
+
+        assert result["success"] is True
+        assert result["instrument_memory"] == memory_content
+
+    def test_connect_instrument_memory_null_when_absent(self):
+        from agentlink import tools
+
+        config = _make_config()
+        resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
+
+        with patch("agentlink.tools.load_config", return_value=config), \
+             patch("agentlink.tools._session.open_session", return_value=resource), \
+             patch("agentlink.tools.load_instrument_memory", return_value=None):
+            result = tools.connect("test_scope")
+
+        assert result["success"] is True
+        assert result["instrument_memory"] is None
+
+    def test_diagnose_includes_instrument_memory_when_config_ok(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+        import agentlink.config as cfg_module
+
+        memory_content = "# scope — Instrument Memory\n\n## recovery\n- power cycle required\n"
+        rs = "USB0::0x0699::0x0527::C012345::INSTR"
+        config = InstrumentConfig(
+            alias="test_scope", resource_string=rs,
+            manufacturer="Tektronix", model_number="MSO44",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = MagicMock()
+        rm.list_resources.return_value = (rs,)
+
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config), \
+             patch("agentlink.diagnostics.load_instrument_memory", return_value=memory_content):
+            report = diagnostics.run_diagnostics(alias="test_scope")
+
+        assert report["alias_check"]["instrument_memory"] == memory_content
+
+    def test_diagnose_instrument_memory_null_when_absent(self, tmp_path):
+        from agentlink import diagnostics
+        from agentlink.config import InstrumentConfig
+
+        rs = "USB0::0x0699::0x0527::C012345::INSTR"
+        config = InstrumentConfig(
+            alias="test_scope", resource_string=rs,
+            manufacturer="Tektronix", model_number="MSO44",
+            timeout_ms=5000, read_termination="\n", write_termination="\n",
+        )
+        rm = MagicMock()
+        rm.list_resources.return_value = (rs,)
+
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config", return_value=config), \
+             patch("agentlink.diagnostics.load_instrument_memory", return_value=None):
+            report = diagnostics.run_diagnostics(alias="test_scope")
+
+        assert report["alias_check"]["instrument_memory"] is None
+
+    def test_diagnose_no_instrument_memory_key_when_config_fails(self, tmp_path):
+        from agentlink import diagnostics
+
+        rm = MagicMock()
+        rm.list_resources.return_value = ()
+
+        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("agentlink.diagnostics.load_config",
+                   side_effect=ConfigError("not found")):
+            report = diagnostics.run_diagnostics(alias="missing")
+
+        assert "instrument_memory" not in report["alias_check"]
+
+
+# ---------------------------------------------------------------------------
 # scpi_logger tests
 # ---------------------------------------------------------------------------
 

@@ -10,7 +10,7 @@ from typing import Any
 
 import pyvisa
 
-from agentlink.config import load_config
+from agentlink.config import load_config, load_instrument_memory
 from agentlink.exceptions import ConfigError, SessionError
 from agentlink import session as _session
 from agentlink.scpi_logger import log_event
@@ -73,6 +73,7 @@ def connect(alias: str) -> dict[str, Any]:
         "manufacturer": config.manufacturer,
         "model_number": config.model_number,
         "techmanual_document_id": config.techmanual_document_id,
+        "instrument_memory": load_instrument_memory(config.alias),
     }
 
 
