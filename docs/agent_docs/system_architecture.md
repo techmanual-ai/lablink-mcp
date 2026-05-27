@@ -31,6 +31,7 @@ agentlink-visa/
 │   ├── session.py                  # VISA session lifecycle: open, close, module-level session dict
 │   ├── tools.py                    # MCP tool implementations (connect, disconnect, query, write)
 │   ├── diagnostics.py              # Connection diagnostics: deps, VISA backend, resource discovery, reachability
+│   ├── scpi_logger.py              # SCPI transaction logger: JSONL log per day to ~/.agentlink/logs/
 │   └── exceptions.py               # Typed exceptions (ConfigError, SessionError)
 ├── mcp_server.py                   # FastMCP entrypoint (stdio)
 ├── cli.py                          # Click CLI entrypoint
@@ -77,18 +78,25 @@ All tools catch `pyvisa` exceptions and return structured error dicts (`{"succes
 ### D. Diagnostics (`agentlink/diagnostics.py`)
 `run_diagnostics(alias=None)` — checks installed dependencies, VISA backend health, detected resources by interface type (USB/GPIB/TCPIP/serial), config directory status, and (when alias is provided) alias-specific reachability: USB presence in resource list, TCPIP ping + port 5025 check, GPIB adapter detection. Returns a structured dict with `ready: bool` and `action_items: list[str]` of concrete user-facing steps. Exposed as the `diagnose_connection` MCP tool and `agentlink diagnose [alias]` CLI command.
 
-### E. MCP Server (`mcp_server.py`)
+### E. SCPI Logger (`agentlink/scpi_logger.py`)
+- `get_log_dir()` — returns the active log directory (`Path`) or `None` if logging is disabled.
+- `log_event(**fields)` — appends one JSONL entry to `<log_dir>/YYYY-MM-DD.jsonl`. Prepends a `ts` (UTC ISO timestamp). Silently no-ops on any filesystem error — logging must never affect instrument control.
+- Called by `tools.py` at every success and failure return point for all four tools.
+- Default log dir: `~/.agentlink/logs/`. Override: `AGENTLINK_LOG_DIR` env var. Disable: set `AGENTLINK_LOG_DIR` to empty string.
+
+### F. MCP Server (`mcp_server.py`)
 - FastMCP entrypoint over stdio.
-- Registers the four tools from `agentlink/tools.py`.
+- Registers the five tools (connect, disconnect, query, write, diagnose_connection).
+- `_INSTRUCTIONS` includes interface-setup guidance, troubleshooting steps, and a VISA/SCPI behavior section surfaced to every agent session.
 - Entry point: `uv run mcp_server.py` or configured in `.mcp.json`.
 
-### F. CLI (`cli.py`)
+### G. CLI (`cli.py`)
 - Click group with four subcommands: `connect`, `query`, `write`, `list`.
 - Thin wrappers over the same core functions used by MCP tools.
 - Diagnostic output to stderr; command output to stdout.
 - Intended for development, debugging, and instrument config validation — not for production agent use.
 
-### G. Exceptions (`agentlink/exceptions.py`)
+### H. Exceptions (`agentlink/exceptions.py`)
 - `ConfigError` — raised on invalid or missing config fields.
 - `SessionError` — raised when a tool is called for an alias with no open session.
 
@@ -147,4 +155,5 @@ Optional. Overrides the default pyvisa-py backend. Document both setup paths in 
 |----------|---------|
 | `AGENTLINK_CONFIG_DIR` | Override instrument config directory (default: `~/.agentlink/instruments/`) |
 | `AGENTLINK_VISA_BACKEND` | Override pyvisa backend (default: `@py` for pyvisa-py) |
+| `AGENTLINK_LOG_DIR` | Override SCPI log directory (default: `~/.agentlink/logs/`); set to empty string to disable logging |
 | `TMAI_API_KEY` | techmanual.ai API key for agent-directed manual lookups |

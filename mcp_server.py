@@ -59,6 +59,42 @@ Common issues:
 
 Only surface an issue to the user if it requires physical action they must
 take themselves (e.g. powering on the instrument, plugging in a cable).
+
+## VISA/SCPI Behavior
+
+VISA is a synchronous, session-based protocol. Internalize these behaviors
+before issuing commands:
+
+**Write is fire-and-forget.** `write_instrument` returning success confirms
+bytes were delivered without a VISA-layer error. It does not confirm the
+instrument executed the command or changed state. Any write where the result
+matters must be followed by a confirming query.
+
+**A query timeout has three distinct causes — each requires a different
+response:**
+1. Command not supported by this instrument: try an alternate SCPI path or
+   consult the programming guide for this specific model.
+2. Wrong syntax for this firmware generation: verify the programming guide
+   lists your exact model number, not just the same series. Advanced features
+   (cursors, math, decode) often vary across firmware generations; core
+   commands (IDN, TDIV, VDIV, measurement parameters) are typically stable.
+3. Instrument busy or settling after a write: issue `*OPC?` before the query
+   (waits for pending operations to complete) or increase timeout_ms in the
+   config.
+
+**`****` in a query response** is a valid instrument reply meaning "no valid
+measurement" — signal absent, wrong channel, or parameter not applicable to
+the current waveform. It is not a VISA error and does not indicate a command
+problem.
+
+**Parallel queries are efficient and correct.** All calls in a single agent
+turn execute on the same held-open session. Fire multiple independent queries
+in one turn to snapshot instrument state cheaply.
+
+**Session log.** All SCPI I/O is logged to ~/.agentlink/logs/YYYY-MM-DD.jsonl
+by default. Override the directory with AGENTLINK_LOG_DIR; disable logging by
+setting AGENTLINK_LOG_DIR to an empty string. Review the log to verify command
+history or diagnose failures post-hoc.
 """
 
 mcp = FastMCP("agentlink-visa", instructions=_INSTRUCTIONS)

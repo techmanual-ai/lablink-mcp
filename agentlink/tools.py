@@ -13,6 +13,7 @@ import pyvisa
 from agentlink.config import load_config
 from agentlink.exceptions import ConfigError, SessionError
 from agentlink import session as _session
+from agentlink.scpi_logger import log_event
 
 
 def connect(alias: str) -> dict[str, Any]:
@@ -28,15 +29,18 @@ def connect(alias: str) -> dict[str, Any]:
         On failure: {"success": False, "error": str, "hint": str}
     """
     if _session.is_connected(alias):
+        err = f"Session already open for alias '{alias}'."
+        log_event(op="connect", alias=alias, success=False, error=err)
         return {
             "success": False,
-            "error": f"Session already open for alias '{alias}'.",
+            "error": err,
             "hint": "Call disconnect_instrument() first, or use the existing session.",
         }
 
     try:
         config = load_config(alias)
     except ConfigError as exc:
+        log_event(op="connect", alias=alias, success=False, error=str(exc))
         return {
             "success": False,
             "error": str(exc),
@@ -53,12 +57,15 @@ def connect(alias: str) -> dict[str, Any]:
             _session.close_session(config.alias)
         except Exception:
             pass
+        err = f"VISA error: {exc}"
+        log_event(op="connect", alias=alias, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA error: {exc}",
+            "error": err,
             "hint": "Check that the instrument is powered on, the resource string is correct, and the VISA backend is installed.",
         }
 
+    log_event(op="connect", alias=config.alias, idn=idn, success=True)
     return {
         "success": True,
         "alias": config.alias,
@@ -82,18 +89,22 @@ def disconnect(alias: str) -> dict[str, Any]:
     try:
         _session.close_session(alias)
     except SessionError as exc:
+        log_event(op="disconnect", alias=alias, success=False, error=str(exc))
         return {
             "success": False,
             "error": str(exc),
             "hint": f"Call connect('{alias}') before disconnect().",
         }
     except pyvisa.Error as exc:
+        err = f"VISA error closing session: {exc}"
+        log_event(op="disconnect", alias=alias, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA error closing session: {exc}",
+            "error": err,
             "hint": "Session may already be closed. Proceeding is safe.",
         }
 
+    log_event(op="disconnect", alias=alias, success=True)
     return {"success": True, "alias": alias}
 
 
@@ -111,6 +122,7 @@ def query(alias: str, command: str) -> dict[str, Any]:
     try:
         resource = _session.get_session(alias)
     except SessionError as exc:
+        log_event(op="query", alias=alias, command=command, success=False, error=str(exc))
         return {
             "success": False,
             "error": str(exc),
@@ -120,18 +132,23 @@ def query(alias: str, command: str) -> dict[str, Any]:
     try:
         response = resource.query(command).strip()
     except pyvisa.errors.VisaIOError as exc:
+        err = f"VISA I/O error: {exc}"
+        log_event(op="query", alias=alias, command=command, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA I/O error: {exc}",
+            "error": err,
             "hint": "Check the command syntax and that the instrument is ready. A timeout may indicate the instrument does not respond to this query.",
         }
     except pyvisa.Error as exc:
+        err = f"VISA error: {exc}"
+        log_event(op="query", alias=alias, command=command, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA error: {exc}",
+            "error": err,
             "hint": "Unexpected VISA error. Try disconnect() and reconnect().",
         }
 
+    log_event(op="query", alias=alias, command=command, response=response, success=True)
     return {"success": True, "alias": alias, "command": command, "response": response}
 
 
@@ -149,6 +166,7 @@ def write(alias: str, command: str) -> dict[str, Any]:
     try:
         resource = _session.get_session(alias)
     except SessionError as exc:
+        log_event(op="write", alias=alias, command=command, success=False, error=str(exc))
         return {
             "success": False,
             "error": str(exc),
@@ -158,16 +176,21 @@ def write(alias: str, command: str) -> dict[str, Any]:
     try:
         resource.write(command)
     except pyvisa.errors.VisaIOError as exc:
+        err = f"VISA I/O error: {exc}"
+        log_event(op="write", alias=alias, command=command, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA I/O error: {exc}",
+            "error": err,
             "hint": "Check the command syntax and that the instrument is connected.",
         }
     except pyvisa.Error as exc:
+        err = f"VISA error: {exc}"
+        log_event(op="write", alias=alias, command=command, success=False, error=err)
         return {
             "success": False,
-            "error": f"VISA error: {exc}",
+            "error": err,
             "hint": "Unexpected VISA error. Try disconnect() and reconnect().",
         }
 
+    log_event(op="write", alias=alias, command=command, success=True)
     return {"success": True, "alias": alias, "command": command}

@@ -329,6 +329,95 @@ class TestConnectSessionLeak:
 
 
 # ---------------------------------------------------------------------------
+# scpi_logger tests
+# ---------------------------------------------------------------------------
+
+class TestScpiLogger:
+    def test_log_event_writes_jsonl_entry(self, tmp_path, monkeypatch):
+        import json
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        # reload get_log_dir to pick up the new env value
+        scpi_logger.log_event(op="query", alias="test_scope", command="*IDN?", response="ACME", success=True)
+
+        log_files = list(tmp_path.glob("*.jsonl"))
+        assert len(log_files) == 1
+
+        lines = log_files[0].read_text().strip().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["op"] == "query"
+        assert entry["alias"] == "test_scope"
+        assert entry["command"] == "*IDN?"
+        assert entry["response"] == "ACME"
+        assert entry["success"] is True
+        assert "ts" in entry
+
+    def test_multiple_events_append_to_same_file(self, tmp_path, monkeypatch):
+        import json
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        scpi_logger.log_event(op="connect", alias="scope", success=True, idn="ACME,X1,SN,v1")
+        scpi_logger.log_event(op="query", alias="scope", command="FREQ?", response="1000", success=True)
+        scpi_logger.log_event(op="write", alias="scope", command="TDIV 1E-3", success=True)
+
+        log_files = list(tmp_path.glob("*.jsonl"))
+        assert len(log_files) == 1
+        lines = log_files[0].read_text().strip().splitlines()
+        assert len(lines) == 3
+        ops = [json.loads(l)["op"] for l in lines]
+        assert ops == ["connect", "query", "write"]
+
+    def test_logging_disabled_when_env_empty(self, tmp_path, monkeypatch):
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", "")
+        scpi_logger.log_event(op="query", alias="scope", command="*IDN?", success=True)
+
+        assert list(tmp_path.glob("*.jsonl")) == []
+
+    def test_error_entry_has_error_field(self, tmp_path, monkeypatch):
+        import json
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        scpi_logger.log_event(op="query", alias="scope", command="BAD?", success=False, error="VISA I/O error: timeout")
+
+        lines = list(tmp_path.glob("*.jsonl"))[0].read_text().strip().splitlines()
+        entry = json.loads(lines[0])
+        assert entry["success"] is False
+        assert "timeout" in entry["error"]
+
+    def test_log_event_never_raises_on_bad_dir(self, monkeypatch):
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", "/nonexistent/readonly/path/xyz")
+        # Should not raise even if mkdir fails (on systems where this path is unwritable)
+        scpi_logger.log_event(op="write", alias="scope", command="TDIV 1E-3", success=True)
+
+    def test_get_log_dir_returns_default_when_unset(self, monkeypatch):
+        from agentlink import scpi_logger
+        from pathlib import Path
+
+        monkeypatch.delenv("AGENTLINK_LOG_DIR", raising=False)
+        assert scpi_logger.get_log_dir() == Path.home() / ".agentlink" / "logs"
+
+    def test_get_log_dir_returns_none_when_empty(self, monkeypatch):
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", "")
+        assert scpi_logger.get_log_dir() is None
+
+    def test_get_log_dir_returns_override_path(self, tmp_path, monkeypatch):
+        from agentlink import scpi_logger
+
+        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        assert scpi_logger.get_log_dir() == tmp_path
+
+
+# ---------------------------------------------------------------------------
 # diagnostics tests
 # ---------------------------------------------------------------------------
 

@@ -46,7 +46,23 @@
 - **Test location:** `tests/test_tools.py` for MCP tool tests, add additional test files as modules grow.
 - **No hardware-dependent tests in CI.** If a test requires real hardware, mark it `@pytest.mark.skip(reason="requires hardware")` and document the manual test procedure.
 
-## 5. Agent Behavior & Interaction
+## 5. Interface-Specific Agent Context Pattern
+
+Each AgentLink interface type (VISA, SSH, gRPC, REST, …) must include a
+dedicated behavior section in its MCP server's `_INSTRUCTIONS`. This section
+is surfaced to every agent session and should cover:
+
+- The protocol's request-response model and any fire-and-forget semantics
+- How to distinguish error causes that produce the same surface symptom
+- Instrument/service-specific response conventions that an agent could misread
+- Efficiency patterns (e.g., parallel queries, session reuse)
+- Where to find the session log and how to disable it
+
+The VISA/SCPI section in `mcp_server.py` is the canonical template. When
+adding a new sibling (`agentlink-ssh`, etc.), mirror this section with the
+analogous background for that interface's protocol.
+
+## 7. Agent Behavior & Interaction
 
 - **Ambiguity:** Always ask clarifying questions before implementation. Do not guess.
 - **Scope discipline:** Do not add features, refactor, or introduce abstractions beyond what the current task requires. v0.1 scope is bounded by the founding demo (see `project_goal.md`).
@@ -54,7 +70,7 @@
 - **Context documents:** Be concise. Avoid fluff to minimize context window usage.
 - **Self-correction:** If corrected by the developer on a preference or rule, update this document to capture it for future agents.
 
-## 6. Git & Version Control
+## 8. Git & Version Control
 
 - **Commit messages:** Imperative mood ("Add feature", not "Added feature").
 - **Granularity:** Atomic commits — one feature or fix per commit.
