@@ -56,11 +56,13 @@ write_termination = "\n"
 
 Optional fields:
 ```toml
-techmanual_document_id = 142   # direct link to the manual in techmanual.ai
+techmanual_document_ids = [1291, 1323]   # [user_manual_id, programming_guide_id]
 description = "4-channel mixed signal oscilloscope, bench 3"
 ```
 
-The `techmanual_document_id` field is the bridge: when present, the MCP server can surface the relevant manual to the agent without a search query.
+The `techmanual_document_ids` list is the bridge: when present, the MCP server surfaces relevant manuals to the agent on `connect()` without requiring a search query. Instruments typically need two documents — a user manual for measurement concepts and a programming guide for SCPI syntax. The legacy single-int field `techmanual_document_id` is still accepted and auto-converted to a one-element list.
+
+Alias naming convention: `<manufacturer>_<model>`, lowercase with underscores (e.g. `siglent_sds1104xe`, `tektronix_mso44`).
 
 ### 2.4 techmanual.ai Integration Pattern
 **On-demand (Option B), not auto-inject (Option A).** Auto-injection risks context bloat and irrelevant content. The agent decides when to look things up. The `techmanual_document_id` field makes targeted lookups trivial.

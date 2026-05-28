@@ -54,7 +54,7 @@ agentlink-visa/
 - Reads `~/.agentlink/instruments/<alias>.toml` (or `$AGENTLINK_CONFIG_DIR/<alias>.toml`).
 - Validates required fields at load time; raises `ConfigError` with a clear message on missing fields.
 - Returns a typed config dataclass used by session and tool modules.
-- The `techmanual_document_id` optional field is passed through to MCP tool responses to enable agent-directed manual lookups.
+- The `techmanual_document_ids` field (list of ints) is passed through to MCP tool responses to enable agent-directed manual lookups. Legacy single-int `techmanual_document_id` is auto-converted to a one-element list on load.
 - `load_instrument_memory(alias)` reads `<config_dir>/<alias>.md` and returns its content, or `None` if the file does not exist. Never raises.
 
 ### B. Session Manager (`agentlink/session.py`)
@@ -146,7 +146,7 @@ $ agentlink list
 ## 5. Configuration
 
 ### Instrument Config (`~/.agentlink/instruments/<alias>.toml`)
-One file per instrument. Required and optional fields documented in `project_goal.md` §2.3.
+One file per instrument. Required and optional fields documented in `project_goal.md` §2.3. Alias convention: `<manufacturer>_<model>` lowercase with underscores.
 
 ### Instrument Memory (`~/.agentlink/instruments/<alias>.md`)
 Optional. Agent-maintained Markdown file of device-specific quirks and workarounds. Created and appended by agents when they encounter non-obvious device issues. Returned as `instrument_memory` in `connect()` and `diagnose_connection()` (alias_check) responses. Format: `## category` headers with one-line bullet entries per quirk.

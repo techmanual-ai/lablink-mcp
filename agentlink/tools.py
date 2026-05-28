@@ -25,7 +25,7 @@ def connect(alias: str) -> dict[str, Any]:
     Returns:
         On success: {"success": True, "alias": str, "idn": str,
                      "manufacturer": str, "model_number": str,
-                     "techmanual_document_id": int | None}
+                     "techmanual_document_ids": list[int]}
         On failure: {"success": False, "error": str, "hint": str}
     """
     if _session.is_connected(alias):
@@ -72,7 +72,7 @@ def connect(alias: str) -> dict[str, Any]:
         "idn": idn,
         "manufacturer": config.manufacturer,
         "model_number": config.model_number,
-        "techmanual_document_id": config.techmanual_document_id,
+        "techmanual_document_ids": config.techmanual_document_ids,
         "instrument_memory": load_instrument_memory(config.alias),
     }
 

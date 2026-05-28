@@ -27,7 +27,7 @@ def _make_config(**overrides):
         timeout_ms=5000,
         read_termination="\n",
         write_termination="\n",
-        techmanual_document_id=None,
+        techmanual_document_ids=[],
         description=None,
     )
     defaults.update(overrides)
@@ -94,8 +94,67 @@ description = "bench scope"
 
         assert config.alias == "test_scope"
         assert config.model_number == "MSO44"
-        assert config.techmanual_document_id == 142
+        assert config.techmanual_document_ids == [142]
         assert config.description == "bench scope"
+
+    def test_plural_document_ids_loads_as_list(self, tmp_path):
+        import agentlink.config as cfg_module
+
+        toml_content = b"""
+alias = "test_scope"
+resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
+manufacturer = "Tektronix"
+model_number = "MSO44"
+timeout_ms = 5000
+read_termination = "\\n"
+write_termination = "\\n"
+techmanual_document_ids = [1291, 1323]
+"""
+        (tmp_path / "test_scope.toml").write_bytes(toml_content)
+
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            config = cfg_module.load_config("test_scope")
+
+        assert config.techmanual_document_ids == [1291, 1323]
+
+    def test_singular_document_id_backward_compat(self, tmp_path):
+        import agentlink.config as cfg_module
+
+        toml_content = b"""
+alias = "test_scope"
+resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
+manufacturer = "Tektronix"
+model_number = "MSO44"
+timeout_ms = 5000
+read_termination = "\\n"
+write_termination = "\\n"
+techmanual_document_id = 142
+"""
+        (tmp_path / "test_scope.toml").write_bytes(toml_content)
+
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            config = cfg_module.load_config("test_scope")
+
+        assert config.techmanual_document_ids == [142]
+
+    def test_no_document_id_defaults_to_empty_list(self, tmp_path):
+        import agentlink.config as cfg_module
+
+        toml_content = b"""
+alias = "test_scope"
+resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
+manufacturer = "Tektronix"
+model_number = "MSO44"
+timeout_ms = 5000
+read_termination = "\\n"
+write_termination = "\\n"
+"""
+        (tmp_path / "test_scope.toml").write_bytes(toml_content)
+
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            config = cfg_module.load_config("test_scope")
+
+        assert config.techmanual_document_ids == []
 
     def test_list_configs_empty_dir(self, tmp_path):
         import agentlink.config as cfg_module
@@ -133,7 +192,7 @@ write_termination = "\\n"
 class TestConnect:
     def test_success(self):
         from agentlink import tools
-        config = _make_config(techmanual_document_id=42)
+        config = _make_config(techmanual_document_ids=[42, 99])
         resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
 
         with patch("agentlink.tools.load_config", return_value=config), \
@@ -143,7 +202,7 @@ class TestConnect:
         assert result["success"] is True
         assert result["alias"] == "test_scope"
         assert "TEKTRONIX" in result["idn"]
-        assert result["techmanual_document_id"] == 42
+        assert result["techmanual_document_ids"] == [42, 99]
 
     def test_config_not_found(self):
         from agentlink import tools

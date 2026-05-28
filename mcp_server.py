@@ -29,9 +29,13 @@ config files manually. When a user mentions an instrument or asks to connect:
    Default termination values work for most instruments:
      read_termination = "\\n"
      write_termination = "\\n"
-4. If techmanual.ai is available, search for the model number and extract the
-   document_id from the results. Add it to the config as techmanual_document_id.
-   This lets future sessions skip the search and go directly to the manual.
+   Name the alias using the convention <manufacturer>_<model>, lowercase with
+   underscores (e.g. siglent_sds1104xe, tektronix_mso44, keysight_dsox1204g).
+4. If techmanual.ai is available, search for the model number and extract document
+   IDs from the results. Instruments typically have two relevant documents: a user
+   manual and a programming guide. Add both to the config:
+     techmanual_document_ids = [<user_manual_id>, <programming_guide_id>]
+   This lets future sessions skip the search and go directly to the manuals.
 5. Call connect_instrument(alias) to open the session and confirm.
 
 ## Config file format
@@ -40,7 +44,30 @@ config files manually. When a user mentions an instrument or asks to connect:
 
 Required: alias, resource_string, manufacturer, model_number, timeout_ms,
           read_termination, write_termination
-Optional: description, techmanual_document_id
+Optional: description, techmanual_document_ids (list of ints, e.g. [1291, 1323])
+
+The legacy single-ID format (techmanual_document_id = 142) is still accepted
+and auto-converted to a one-element list on load.
+
+## Using techmanual.ai
+
+If the techmanual.ai MCP tool is available in your session, use it as the
+primary SCPI and instrument reference — do not rely on training data alone
+for command syntax. Firmware variants and series differences cause silent
+failures that manual lookup prevents.
+
+**On every connect:** check the techmanual_document_ids list in the response.
+- If non-empty: query those documents directly before issuing any SCPI.
+  Instruments typically have two: a user manual (measurement concepts,
+  parameter definitions) and a programming guide (SCPI syntax, ranges).
+  Look up both before your first command.
+- If empty and techmanual is available: search by manufacturer and
+  model_number, identify the relevant documents, then update the config
+  with the discovered IDs so future sessions skip this step.
+
+Never start issuing SCPI commands against an unfamiliar instrument without
+first consulting available documentation. The time cost of one search query
+is far less than a cycle of failed command attempts.
 
 ## Troubleshooting — resolve before escalating to the user
 
@@ -139,9 +166,10 @@ def connect_instrument(alias: str) -> dict:
     If it does not, create it — do not ask the user to do so. See server
     instructions for the full setup sequence.
 
-    On success, the response includes techmanual_document_id (update config if null)
-    and instrument_memory (device-specific quirks from previous sessions, or null).
-    Read instrument_memory before issuing any commands.
+    On success, the response includes techmanual_document_ids (a list of ints —
+    update config if empty) and instrument_memory (device-specific quirks from
+    previous sessions, or null). Consult techmanual.ai using those IDs and read
+    instrument_memory before issuing any SCPI commands.
 
     Args:
         alias: Instrument alias matching the config filename (e.g. 'tek_mso44').

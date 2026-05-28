@@ -13,6 +13,8 @@
 - Use `tomllib` (stdlib, Python 3.11+) or `tomli` (backport for 3.10) for config loading. Do not use third-party TOML libraries.
 - Config loading lives in `agentlink/config.py`. Never scatter config reads across other modules.
 - Always validate required fields (`alias`, `resource_string`, `manufacturer`, `model_number`, `timeout_ms`, `read_termination`, `write_termination`) at load time and raise a typed `ConfigError` with a clear message if any are missing.
+- Alias naming convention: `<manufacturer>_<model>`, lowercase with underscores (e.g. `siglent_sds1104xe`).
+- `techmanual_document_ids` is a `list[int]`. The legacy `techmanual_document_id` single-int field is accepted at load time and auto-converted. Always write new configs using the plural list form.
 
 ### MCP (FastMCP)
 - Follow the same FastMCP stdio pattern used in `techmanual-ai/claude-plugin`.

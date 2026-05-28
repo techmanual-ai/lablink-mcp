@@ -6,7 +6,7 @@ typed InstrumentConfig dataclass. All config access must go through this module.
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -41,8 +41,23 @@ class InstrumentConfig:
     timeout_ms: int
     read_termination: str
     write_termination: str
-    techmanual_document_id: Optional[int] = None
+    techmanual_document_ids: list[int] = field(default_factory=list)
     description: Optional[str] = None
+
+
+def _load_document_ids(raw: dict) -> list[int]:
+    """Extract techmanual document IDs from a raw config dict.
+
+    Accepts both the current plural format (techmanual_document_ids = [1291, 1323])
+    and the legacy singular format (techmanual_document_id = 1291).
+    """
+    plural = raw.get("techmanual_document_ids")
+    if isinstance(plural, list):
+        return [int(i) for i in plural]
+    singular = raw.get("techmanual_document_id")
+    if singular is not None:
+        return [int(singular)]
+    return []
 
 
 def get_config_dir() -> Path:
@@ -89,7 +104,7 @@ def load_config(alias: str) -> InstrumentConfig:
         timeout_ms=int(raw["timeout_ms"]),
         read_termination=raw["read_termination"],
         write_termination=raw["write_termination"],
-        techmanual_document_id=raw.get("techmanual_document_id"),
+        techmanual_document_ids=_load_document_ids(raw),
         description=raw.get("description"),
     )
 
