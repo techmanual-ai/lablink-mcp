@@ -1,12 +1,13 @@
-"""Instrument config loader.
+"""Device config loader.
 
-Reads <config_dir>/<alias>.toml, validates required fields, and returns a
-typed InstrumentConfig dataclass. All config access must go through this module.
+Reads <config_dir>/<alias>.toml, resolves the driver-specific config subclass
+via DRIVER_CONFIG_REGISTRY[type], and returns a validated DriverConfig. All
+config access must go through this module.
 """
 
+import dataclasses
 import os
 import sys
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -16,138 +17,113 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib  # type: ignore[no-redef]
 
+from lablink.base import DriverConfig
 from lablink.exceptions import ConfigError
-
-_REQUIRED_FIELDS = (
-    "alias",
-    "resource_string",
-    "manufacturer",
-    "model_number",
-    "timeout_ms",
-    "read_termination",
-    "write_termination",
-)
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".lablink" / "devices"
 
 _LEGACY_CONFIG_DIR = Path.home() / ".agentlink" / "instruments"
 _MIGRATION_MARKER = "MIGRATED.txt"
 
-
-@dataclass
-class InstrumentConfig:
-    """Validated instrument configuration."""
-
-    alias: str
-    resource_string: str
-    manufacturer: str
-    model_number: str
-    timeout_ms: int
-    read_termination: str
-    write_termination: str
-    techmanual_document_ids: list[int] = field(default_factory=list)
-    description: Optional[str] = None
-
-
-def _load_document_ids(raw: dict) -> list[int]:
-    """Extract techmanual document IDs from a raw config dict.
-
-    Accepts both the current plural format (techmanual_document_ids = [1291, 1323])
-    and the legacy singular format (techmanual_document_id = 1291).
-    """
-    plural = raw.get("techmanual_document_ids")
-    if isinstance(plural, list):
-        return [int(i) for i in plural]
-    singular = raw.get("techmanual_document_id")
-    if singular is not None:
-        return [int(singular)]
-    return []
+# Fields whose values are filesystem paths and must be tilde-expanded at load
+# time (TOML does not auto-expand tildes). See lablink_plan.md §5.4.
+_PATH_FIELDS = frozenset({"auth_ssh_key_path", "python_path", "working_dir"})
 
 
 def get_config_dir() -> Path:
-    """Return the instrument config directory, applying env override if set."""
+    """Return the device config directory, applying env override if set."""
     env_override = os.environ.get("LABLINK_CONFIG_DIR")
     return Path(env_override) if env_override else _DEFAULT_CONFIG_DIR
 
 
-def load_config(alias: str) -> InstrumentConfig:
-    """Load and validate the instrument config for the given alias.
+def _valid_types() -> list[str]:
+    from lablink.interfaces import DRIVER_CONFIG_REGISTRY
+
+    return sorted(DRIVER_CONFIG_REGISTRY.keys())
+
+
+def load_config(alias: str) -> DriverConfig:
+    """Load and validate the device config for the given alias.
+
+    Reads the ``type`` field, resolves the driver-specific config subclass via
+    DRIVER_CONFIG_REGISTRY, filters the TOML keys to that subclass's fields, and
+    instantiates it. The alias is taken from the filename when absent from the
+    TOML body. Path-valued fields are tilde-expanded.
 
     Args:
-        alias: Instrument alias matching the filename (<alias>.toml).
+        alias: Device alias matching the filename (<alias>.toml).
 
     Returns:
-        Validated InstrumentConfig dataclass.
+        A validated DriverConfig subclass instance.
 
     Raises:
-        ConfigError: If the config file is not found or required fields are missing.
+        ConfigError: file not found, missing/unknown ``type``, or missing
+            required fields for the resolved driver.
     """
-    config_dir = get_config_dir()
-    config_path = config_dir / f"{alias}.toml"
+    from lablink.interfaces import DRIVER_CONFIG_REGISTRY
 
+    config_path = get_config_dir() / f"{alias}.toml"
     if not config_path.exists():
         raise ConfigError(
-            f"No config file found for alias '{alias}'. "
-            f"Expected: {config_path}"
+            f"No config file found for alias '{alias}'. Expected: {config_path}"
         )
 
     with open(config_path, "rb") as f:
         raw = tomllib.load(f)
 
-    missing = [field for field in _REQUIRED_FIELDS if field not in raw]
-    if missing:
+    type_ = raw.get("type")
+    if type_ is None:
         raise ConfigError(
-            f"Config for '{alias}' is missing required fields: {', '.join(missing)}"
+            f"Config for '{alias}' is missing required field: type. "
+            f"Valid types: {_valid_types()}."
         )
 
-    return InstrumentConfig(
-        alias=raw["alias"],
-        resource_string=raw["resource_string"],
-        manufacturer=raw["manufacturer"],
-        model_number=raw["model_number"],
-        timeout_ms=int(raw["timeout_ms"]),
-        read_termination=raw["read_termination"],
-        write_termination=raw["write_termination"],
-        techmanual_document_ids=_load_document_ids(raw),
-        description=raw.get("description"),
-    )
+    config_cls = DRIVER_CONFIG_REGISTRY.get(type_)
+    if config_cls is None:
+        raise ConfigError(
+            f"Unknown driver type '{type_}'. Valid types: {_valid_types()}."
+        )
+
+    field_names = {f.name for f in dataclasses.fields(config_cls)}
+    kwargs = {k: v for k, v in raw.items() if k in field_names}
+    kwargs["type"] = type_
+    kwargs.setdefault("alias", alias)
+
+    # Legacy singular techmanual_document_id -> one-element plural list.
+    if (
+        "techmanual_document_ids" in field_names
+        and "techmanual_document_ids" not in kwargs
+        and raw.get("techmanual_document_id") is not None
+    ):
+        kwargs["techmanual_document_ids"] = [int(raw["techmanual_document_id"])]
+
+    for path_field in _PATH_FIELDS & field_names:
+        if kwargs.get(path_field) is not None:
+            kwargs[path_field] = str(Path(kwargs[path_field]).expanduser())
+
+    try:
+        return config_cls(**kwargs)
+    except TypeError as exc:
+        # Missing a required field (no default) for this driver type.
+        raise ConfigError(f"Config for '{alias}' is invalid: {exc}") from exc
 
 
-def load_instrument_memory(alias: str) -> Optional[str]:
-    """Return the instrument memory file content for the given alias, or None.
+def load_device_memory(alias: str) -> Optional[str]:
+    """Return the device memory file content for the given alias, or None.
 
-    The memory file (~/.lablink/devices/<alias>.md) is an optional
-    agent-maintained document of device-specific quirks and workarounds.
-    Returns None if the file does not exist. Never raises.
+    The memory file (<config_dir>/<alias>.md) is an optional agent-maintained
+    document of device-specific quirks and workarounds. Returns None if the
+    file does not exist. Never raises. This is the single reader of the memory
+    file — drivers never touch it (see lablink_plan.md §6.3.1).
 
     Args:
-        alias: Instrument alias matching the config filename.
+        alias: Device alias matching the config filename.
     """
     memory_path = get_config_dir() / f"{alias}.md"
     try:
         return memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
     except Exception:
         return None
-
-
-def list_configs() -> list[InstrumentConfig]:
-    """Return all valid instrument configs in the config directory.
-
-    Returns:
-        List of InstrumentConfig objects. Files that fail validation are skipped silently.
-    """
-    config_dir = get_config_dir()
-    if not config_dir.exists():
-        return []
-
-    configs = []
-    for toml_file in sorted(config_dir.glob("*.toml")):
-        alias = toml_file.stem
-        try:
-            configs.append(load_config(alias))
-        except ConfigError:
-            pass
-    return configs
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +254,6 @@ def maybe_migrate_legacy_configs() -> int:
     try:
         marker.write_text(marker_text, encoding="utf-8")
     except OSError as exc:
-        # Files copied successfully but the marker write failed. A retry will
-        # skip already-copied files (no-overwrite rule) and re-attempt the
-        # marker. The user-facing summary still fires so the migration is not
-        # silently hidden.
         print(
             f"[lablink] Warning: migration copied {len(copied)} file(s) but "
             f"could not write {marker}: {exc}.",

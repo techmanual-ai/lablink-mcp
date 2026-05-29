@@ -1,89 +1,72 @@
-"""VISA session lifecycle management.
+"""Session registry.
 
-Maintains a module-level dict of open sessions keyed by alias. Sessions are
-held open between MCP tool calls — not opened and closed per call.
+Maintains a process-wide dict of open sessions keyed by alias. Sessions are
+held open between MCP tool calls — not opened and closed per call. The registry
+is protocol-agnostic: drivers construct their own native connection, wrap it in
+a Session, and register it here.
+
+Lookup is three-state (see lablink_plan.md §6) so error messages can
+distinguish "no session" from "wrong type" — a wrong-type result tells the
+agent the alias is in use by a different driver, which connect() would clobber.
 """
 
-import os
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Optional
 
-import pyvisa
+from lablink.base import Session
 
-from lablink.config import InstrumentConfig
-from lablink.exceptions import SessionError
-
-_sessions: dict[str, Any] = {}
-
-_DEFAULT_VISA_BACKEND = "@py"
-
-_resource_manager: Optional[pyvisa.ResourceManager] = None
+_sessions: dict[str, Session] = {}
 
 
-def _get_resource_manager() -> pyvisa.ResourceManager:
-    """Return the shared ResourceManager, creating it on first call."""
-    global _resource_manager
-    if _resource_manager is None:
-        backend = os.environ.get("LABLINK_VISA_BACKEND", _DEFAULT_VISA_BACKEND)
-        _resource_manager = pyvisa.ResourceManager(backend)
-    return _resource_manager
+@dataclass
+class SessionLookup:
+    found: bool
+    wrong_type: bool                          # True iff a session exists but interface_type != expected_type
+    session: Optional[Session] = None         # populated only when found and not wrong_type
+    actual_type: Optional[str] = None         # populated only when wrong_type
 
 
-def is_connected(alias: str) -> bool:
+def register(session: Session) -> None:
+    """Register a session under its alias, replacing any existing entry."""
+    _sessions[session.alias] = session
+
+
+def deregister(alias: str) -> None:
+    """Remove a session from the registry. No-op if the alias is absent."""
+    _sessions.pop(alias, None)
+
+
+def is_registered(alias: str) -> bool:
     """Return True if a session is currently open for the given alias."""
     return alias in _sessions
 
 
-def open_session(config: InstrumentConfig) -> Any:
-    """Open a VISA session for the given instrument config and register it.
+def get_any(alias: str) -> Optional[Session]:
+    """Return the session for an alias regardless of type, or None.
 
-    Args:
-        config: Validated InstrumentConfig for the instrument.
-
-    Returns:
-        The open pyvisa Resource object.
-
-    Raises:
-        pyvisa.Error: If the resource cannot be opened (propagated to tool layer).
+    Used by the shared disconnect() tool, which must resolve the owning driver
+    from any open session without knowing its type up front.
     """
-    rm = _get_resource_manager()
-    resource = rm.open_resource(config.resource_string)
-    resource.timeout = config.timeout_ms
-    resource.read_termination = config.read_termination
-    resource.write_termination = config.write_termination
-    _sessions[config.alias] = resource
-    return resource
+    return _sessions.get(alias)
 
 
-def close_session(alias: str) -> None:
-    """Close the VISA session for the given alias and remove it from the registry.
-
-    Args:
-        alias: Instrument alias.
-
-    Raises:
-        SessionError: If no session is open for the alias.
-    """
-    resource = _sessions.pop(alias, None)
-    if resource is None:
-        raise SessionError(f"No open session for alias '{alias}'.")
-    resource.close()
-
-
-def get_session(alias: str) -> Any:
-    """Return the open VISA resource for the given alias.
-
-    Args:
-        alias: Instrument alias.
-
-    Returns:
-        The open pyvisa Resource object.
-
-    Raises:
-        SessionError: If no session is open for the alias.
-    """
-    resource = _sessions.get(alias)
-    if resource is None:
-        raise SessionError(
-            f"No open session for alias '{alias}'. Call connect() first."
+def lookup(alias: str, expected_type: str) -> SessionLookup:
+    """Three-state lookup distinguishing missing from wrong-type sessions."""
+    session = _sessions.get(alias)
+    if session is None:
+        return SessionLookup(found=False, wrong_type=False)
+    if session.interface_type != expected_type:
+        return SessionLookup(
+            found=False, wrong_type=True, actual_type=session.interface_type
         )
-    return resource
+    return SessionLookup(found=True, wrong_type=False, session=session)
+
+
+def get(alias: str, expected_type: str) -> Optional[Session]:
+    """Return the Session iff it exists AND its type matches expected_type.
+
+    Returns None in both the "no session" and "wrong type" cases. Drivers that
+    need to disambiguate the error message use lookup() instead.
+    """
+    result = lookup(alias, expected_type)
+    return result.session if result.found else None

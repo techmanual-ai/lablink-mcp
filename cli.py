@@ -1,7 +1,12 @@
 """LabLink CLI.
 
-Thin wrappers over the same core functions used by the MCP tools.
-Intended for development, debugging, and instrument config validation.
+Thin wrappers over the same shared dispatch path used by the MCP tools.
+Intended for development, debugging, and config validation.
+
+NOTE (Phase 0b): the command structure is still the flat agentlink-visa shape
+(`lablink query`, `lablink write`). The architectural rewrite into per-driver
+subgroups (`lablink visa query ...`, via each driver's register_cli_commands)
+is Phase 0c. The flat query/write commands here are VISA-only.
 
 Usage:
     lablink list
@@ -16,48 +21,53 @@ import sys
 
 import click
 
-from lablink.config import (
-    get_config_dir,
-    list_configs,
-    load_config,
-    maybe_migrate_legacy_configs,
+from lablink.config import maybe_migrate_legacy_configs
+
+# Shared lifecycle logic + the driver-instance accessor live in mcp_server so
+# the CLI reuses the exact same dispatch path as the MCP tools (no FastMCP
+# server is started by importing it; driver tools register only in main()).
+from mcp_server import (
+    do_connect,
+    do_diagnose,
+    do_disconnect,
+    do_list_devices,
+    get_driver,
 )
-from lablink.diagnostics import run_diagnostics
-from lablink.exceptions import ConfigError
-from lablink.tools import connect, disconnect, query, write
 
 
 @click.group()
 def cli() -> None:
-    """LabLink: AI agent control of T&M equipment via VISA."""
+    """LabLink: AI agent control of lab devices."""
     maybe_migrate_legacy_configs()
 
 
 @cli.command(name="connect")
 @click.argument("alias")
 def connect_cmd(alias: str) -> None:
-    """Open a VISA session to ALIAS and verify with *IDN?."""
-    result = connect(alias)
+    """Open a session to ALIAS and verify communication."""
+    result = do_connect(alias)
     if result["success"]:
-        click.echo(f"Connected: {result['idn']}")
-        if result.get("techmanual_document_id"):
-            click.echo(f"techmanual document ID: {result['techmanual_document_id']}", err=True)
+        click.echo(f"Connected: {result.get('identity')}")
+        if result.get("techmanual_document_ids"):
+            click.echo(
+                f"techmanual document IDs: {result['techmanual_document_ids']}", err=True
+            )
     else:
         click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Hint: {result.get('hint')}", err=True)
         sys.exit(1)
 
 
 @cli.command(name="disconnect")
 @click.argument("alias")
 def disconnect_cmd(alias: str) -> None:
-    """Close the VISA session for ALIAS."""
-    result = disconnect(alias)
+    """Close the session for ALIAS."""
+    result = do_disconnect(alias)
     if result["success"]:
         click.echo(f"Disconnected: {alias}")
     else:
         click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Hint: {result.get('hint')}", err=True)
         sys.exit(1)
 
 
@@ -65,94 +75,79 @@ def disconnect_cmd(alias: str) -> None:
 @click.argument("alias")
 @click.argument("command")
 def query_cmd(alias: str, command: str) -> None:
-    """Send COMMAND to ALIAS and print the response."""
-    result = connect(alias)
+    """Send a SCPI query COMMAND to ALIAS and print the response (VISA)."""
+    result = do_connect(alias)
     if not result["success"]:
         click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Hint: {result.get('hint')}", err=True)
         sys.exit(1)
 
-    result = query(alias, command)
-    if result["success"]:
-        click.echo(result["response"])
+    qresult = get_driver("visa").visa_query_impl(alias, command)
+    if qresult["success"]:
+        click.echo(qresult["raw"])
     else:
-        click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Error: {qresult['error']}", err=True)
+        click.echo(f"Hint: {qresult.get('hint')}", err=True)
+        do_disconnect(alias)
         sys.exit(1)
 
-    disconnect(alias)
+    do_disconnect(alias)
 
 
 @cli.command(name="write")
 @click.argument("alias")
 @click.argument("command")
 def write_cmd(alias: str, command: str) -> None:
-    """Send COMMAND to ALIAS (no response expected)."""
-    result = connect(alias)
+    """Send a SCPI write COMMAND to ALIAS, no response expected (VISA)."""
+    result = do_connect(alias)
     if not result["success"]:
         click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Hint: {result.get('hint')}", err=True)
         sys.exit(1)
 
-    result = write(alias, command)
-    if result["success"]:
+    wresult = get_driver("visa").visa_write_impl(alias, command)
+    if wresult["success"]:
         click.echo(f"Sent: {command}", err=True)
     else:
-        click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result['hint']}", err=True)
+        click.echo(f"Error: {wresult['error']}", err=True)
+        click.echo(f"Hint: {wresult.get('hint')}", err=True)
+        do_disconnect(alias)
         sys.exit(1)
 
-    disconnect(alias)
+    do_disconnect(alias)
 
 
 @cli.command(name="list")
 def list_cmd() -> None:
-    """List all configured instrument aliases."""
-    config_dir = get_config_dir()
-
-    if not config_dir.exists():
-        click.echo(f"Config directory not found: {config_dir}", err=True)
-        click.echo("Create it with: mkdir -p ~/.lablink/devices", err=True)
-        sys.exit(1)
-
-    toml_files = sorted(config_dir.glob("*.toml"))
-    if not toml_files:
-        click.echo("No instrument configs found.", err=True)
+    """List all configured device aliases."""
+    devices = do_list_devices()
+    if not devices:
+        click.echo("No device configs found.", err=True)
         click.echo("Add a <alias>.toml to ~/.lablink/devices/ to get started.", err=True)
         sys.exit(1)
 
-    found_any = False
-    for toml_file in toml_files:
-        try:
-            cfg = load_config(toml_file.stem)
-            click.echo(f"{cfg.alias}  {cfg.manufacturer} {cfg.model_number}  {cfg.resource_string}")
-            if cfg.description:
-                click.echo(f"  {cfg.description}")
-            found_any = True
-        except ConfigError as exc:
-            click.echo(f"Warning: {toml_file.name}: {exc}", err=True)
-
-    if not found_any:
-        sys.exit(1)
+    for d in devices:
+        if d["status"] == "invalid":
+            click.echo(f"Warning: {d['alias']}.toml: {d.get('error')}", err=True)
+            continue
+        line = f"{d['alias']}  [{d['type']}]  {d['status']}"
+        click.echo(line)
+        if d.get("description"):
+            click.echo(f"  {d['description']}")
 
 
 @cli.command(name="diagnose")
 @click.argument("alias", required=False, default=None)
 def diagnose_cmd(alias: str | None) -> None:
-    """Run connection diagnostics, optionally for a specific ALIAS.
+    """Run diagnostics for ALIAS, or a system audit when ALIAS is omitted."""
+    report = do_diagnose(alias)
 
-    Checks pyvisa installation, VISA backend health, detected resources,
-    and (when ALIAS is given) config validity and interface reachability.
-    """
-    import json
-
-    report = run_diagnostics(alias)
-
-    if report["ready"]:
+    if report.get("ready"):
         click.echo("All checks passed. Ready to connect.")
     else:
-        click.echo(f"{len(report['action_items'])} issue(s) found:", err=True)
-        for i, item in enumerate(report["action_items"], 1):
+        items = report.get("action_items", [])
+        click.echo(f"{len(items)} issue(s) found:", err=True)
+        for i, item in enumerate(items, 1):
             click.echo(f"  {i}. {item}", err=True)
 
     click.echo(json.dumps(report, indent=2))

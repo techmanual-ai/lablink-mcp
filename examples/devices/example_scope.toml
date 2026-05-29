@@ -6,6 +6,7 @@
 
 # --- Required fields ---
 
+type = "visa"
 alias = "tek_mso44"
 resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
 manufacturer = "Tektronix"

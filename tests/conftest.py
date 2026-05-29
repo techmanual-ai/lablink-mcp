@@ -16,3 +16,13 @@ def _disable_auto_migration(monkeypatch):
     explicitly re-enable it inside the test body.
     """
     monkeypatch.setenv("LABLINK_AUTO_MIGRATE", "0")
+
+
+@pytest.fixture(autouse=True)
+def _clear_session_registry():
+    """Isolate the module-level session registry between tests."""
+    from lablink import session
+
+    session._sessions.clear()
+    yield
+    session._sessions.clear()
