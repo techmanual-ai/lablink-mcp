@@ -5,6 +5,7 @@ Configure in your MCP client as: {"command": "lablink-mcp"}
 """
 
 from fastmcp import FastMCP
+from lablink.config import maybe_migrate_legacy_configs
 from lablink.diagnostics import run_diagnostics
 from lablink.tools import connect, disconnect, query, write
 
@@ -244,6 +245,7 @@ def diagnose_connection(alias: str | None = None) -> dict:
 
 def main() -> None:
     """Run the MCP server over stdio."""
+    maybe_migrate_legacy_configs()
     mcp.run()
 
 

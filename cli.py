@@ -16,7 +16,12 @@ import sys
 
 import click
 
-from lablink.config import get_config_dir, list_configs, load_config
+from lablink.config import (
+    get_config_dir,
+    list_configs,
+    load_config,
+    maybe_migrate_legacy_configs,
+)
 from lablink.diagnostics import run_diagnostics
 from lablink.exceptions import ConfigError
 from lablink.tools import connect, disconnect, query, write
@@ -25,6 +30,7 @@ from lablink.tools import connect, disconnect, query, write
 @click.group()
 def cli() -> None:
     """LabLink: AI agent control of T&M equipment via VISA."""
+    maybe_migrate_legacy_configs()
 
 
 @cli.command(name="connect")

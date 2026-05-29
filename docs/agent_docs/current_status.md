@@ -1,24 +1,44 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 0 — Planning (Architectural Pivot Under Review)**
+**LabLink Phase 0a Complete — Ready for Phase 0b (Architectural Core)**
 
-The agentlink-visa v0.1 MVP is complete and was validated on real hardware (square-wave oscilloscope demo, 2026-05-27). That demo drove the strategic conclusion that **DUT control is the actual product**, not a demo for techmanual.ai. The project is now being rearchitected and renamed to LabLink MCP — a multi-driver MCP server with VISA, SSH, REST, serial, and python_shell support in v1.
+Phase 0a landed: the package, CLI command, MCP entry point, env vars, and
+config paths are all renamed from `agentlink-visa` → `lablink-mcp`, and
+auto-migration of legacy `~/.agentlink/instruments/` configs into
+`~/.lablink/devices/` runs on first invocation. The v0.1 tool surface
+(`connect_instrument`, `query_instrument`, etc.) is unchanged in behavior —
+only string-level renames in this phase. 58/58 tests pass (47 original +
+11 new migration tests).
 
-**Authoritative architectural spec:** `docs/lablink_plan.md`. Read this before any non-trivial design discussion. It supersedes `project_goal.md` and `system_architecture.md` wherever they conflict.
+**Authoritative architectural spec:** `docs/lablink_plan.md`. The
+per-task implementation log is `docs/agent_docs/implementation_log.md`.
 
-The plan is currently going through review cycles with multiple agents. No Phase 0 implementation work has started. Wait for the lead developer's explicit instruction before beginning Phase 0a (mechanical rename + auto-migration).
+**Next phase: 0b — Architectural Core.** Driver ABC, data models, VISA
+driver refactor onto the ABC, dispatch via `DRIVER_REGISTRY`. See
+`lablink_plan.md` §9 Phase 0b. Phase 0b has a stop-the-line FastMCP
+smoke test as Task 0 — write that before any other 0b work.
+
+**Outstanding pre-0b work:** The Phase 0b exit gate requires a pre-rename
+baseline of `agentlink connect <local_instrument>` output for the
+behavioral-equivalence diff. This was deferred in 0a (Siglent scope was
+offline). See `implementation_log.md` for the recommended capture path
+before 0b ships.
 
 ---
 
 ## What Exists On Disk Right Now
 
-- `agentlink/` package (single-driver VISA implementation) — works, all tests pass
-- `mcp_server.py`, `cli.py` — agentlink-visa entrypoints
-- `~/.agentlink/instruments/<alias>.toml` configs (local development only)
-- `agent-bootstrap.md` at repo root — original agentlink-visa founding document; will be archived in Phase 0b
-- `docs/lablink_plan.md` — new architectural plan (this is what's being reviewed)
-- `docs/agent_docs/` — onboarding docs, freshly rewritten 2026-05-28 to reflect the LabLink pivot
+- `lablink/` package (single-driver VISA implementation, renamed from `agentlink/`) — works, 58/58 tests pass
+- `mcp_server.py`, `cli.py` — `lablink-mcp` / `lablink` entrypoints
+- `~/.lablink/devices/<alias>.toml` is the new config location; legacy
+  `~/.agentlink/instruments/` is auto-migrated on first run
+- `examples/devices/example_scope.toml` (renamed from `examples/instruments/`)
+- `CHANGELOG.md` documenting the rename and auto-migration
+- `agent-bootstrap.md` at repo root — original agentlink-visa founding document; will be archived in Phase 0c
+- `docs/lablink_plan.md` — authoritative architectural plan
+- `docs/agent_docs/` — onboarding docs + `implementation_log.md` (per-task
+  progress log for the plan)
 
 For the mapping of current code → target code, see `system_architecture.md` §5.
 
@@ -26,13 +46,37 @@ For the mapping of current code → target code, see `system_architecture.md` §
 
 ## Technical Debt & Known Issues
 
-- **Naming and paths are still `agentlink-visa`.** Package name, repo, PyPI name, env var prefix, config directory all use the old names. The Phase 0a migration plan in `lablink_plan.md` §9 covers the rename including auto-migration of user configs from `~/.agentlink/instruments/` to `~/.lablink/devices/`.
+- **GitHub repo still named `agentlink-visa`.** Local repo dir, GitHub
+  remote URL (`github.com/techmanual-ai/agentlink-visa`), and the
+  `server.json` `repository.url` field are unchanged. The GitHub rename
+  is a manual step outside Phase 0a; the README and `server.json` package
+  identifier already use `lablink-mcp`.
+- **Phase 0b behavioral-equivalence baseline not captured.** See
+  `docs/agent_docs/implementation_log.md` Phase 0a deferred-tasks
+  section. Required before Phase 0b can declare its exit gate met.
 - **CLI `connect`/`query`/`write` subcommands open and close a session per invocation.** Intentional for debug UX but means the session is not persistent across CLI calls (only across MCP calls). Not a concern for v0.1 or the LabLink rearchitecture.
-- **`agent-bootstrap.md` at repo root** references the old architecture. Phase 0b archives it to `docs/archive/agent-bootstrap.md`. Treat it as historical context only.
+- **`agent-bootstrap.md` at repo root** references the old architecture. Phase 0c archives it to `docs/archive/agent-bootstrap.md`. Treat it as historical context only.
 
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 0a Complete]** Mechanical rename + auto-migration shipped.
+  `agentlink/` → `lablink/`; entry points `lablink` / `lablink-mcp` replace
+  `agentlink` / `agentlink-mcp` (hard cutover, no shim — per
+  `lablink_plan.md` §9). All env vars `AGENTLINK_*` → `LABLINK_*`; config
+  dir `~/.agentlink/instruments/` → `~/.lablink/devices/`; log dir
+  `~/.agentlink/logs/` → `~/.lablink/logs/`. New
+  `maybe_migrate_legacy_configs()` in `lablink/config.py` copies legacy
+  `.toml`/`.md` files into the new dir on first run, injecting
+  `type = "visa"` into TOML that lacks it; gated by `MIGRATED.txt`
+  marker in legacy dir and by destination already containing `.toml`
+  files; opt-out via `LABLINK_AUTO_MIGRATE=0`. CLI command structure
+  unchanged (the architectural CLI rewrite into per-driver subgroups is
+  Phase 0c). Added `CHANGELOG.md` and a "Migration from agentlink-visa"
+  section in `README.md` per the plan's discoverability requirement.
+  58/58 tests pass (47 original + 11 new `TestAutoMigration` cases). See
+  `implementation_log.md` for per-task detail.
 
 - **2026-05-28** — **[Docs / Pivot]** Rewrote `docs/agent_docs/` for the LabLink pivot. `readme_agent.md` updated with new onboarding order including `lablink_plan.md` as a required ingestion document. `project_goal.md` rewritten for LabLink scope and DUT-control-as-product framing. `system_architecture.md` rewritten to document both the current (pre-pivot) layout and the target architecture with explicit migration mapping. `agent_development.md` updated for multi-driver patterns (per-driver `register_tools()`, `Session[ConfigT]`, lazy imports, dispatch tests). `current_status.md` (this file) rewritten to phase 0 planning.
 

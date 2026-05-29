@@ -763,3 +763,196 @@ class TestDiagnostics:
 
         assert report["ready"] is True
         assert report["action_items"] == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 0a — auto-migration tests
+# See docs/lablink_plan.md §9 Phase 0a Task 7 for the contract.
+# ---------------------------------------------------------------------------
+
+
+class TestAutoMigration:
+    """Tests for ``lablink.config.maybe_migrate_legacy_configs``.
+
+    Setup pattern:
+      - ``src`` = legacy ``~/.agentlink/instruments/`` (monkeypatched to tmp).
+      - ``dest`` = LabLink config dir (set via ``LABLINK_CONFIG_DIR`` env).
+      - The conftest autouse fixture disables migration; each test
+        re-enables it by deleting ``LABLINK_AUTO_MIGRATE``.
+    """
+
+    def _setup(self, tmp_path, monkeypatch):
+        import lablink.config as cfg_module
+
+        src = tmp_path / "legacy"
+        dest = tmp_path / "new"
+        src.mkdir(parents=True)
+        monkeypatch.setattr(cfg_module, "_LEGACY_CONFIG_DIR", src)
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(dest))
+        monkeypatch.delenv("LABLINK_AUTO_MIGRATE", raising=False)
+        return src, dest
+
+    def test_happy_path_copies_and_injects_type(self, tmp_path, monkeypatch, capsys):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        toml_content = (
+            b'alias = "scope_a"\n'
+            b'resource_string = "USB0::0x1::0x2::A::INSTR"\n'
+        )
+        (src / "scope_a.toml").write_bytes(toml_content)
+        (src / "scope_a.md").write_text("# memory", encoding="utf-8")
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 2
+        copied_toml = (dest / "scope_a.toml").read_bytes()
+        assert copied_toml.startswith(b'type = "visa"\n')
+        assert b'alias = "scope_a"' in copied_toml
+        assert (dest / "scope_a.md").read_text(encoding="utf-8") == "# memory"
+        marker = src / "MIGRATED.txt"
+        assert marker.exists()
+        marker_text = marker.read_text(encoding="utf-8")
+        assert "scope_a.toml" in marker_text
+        assert "scope_a.md" in marker_text
+        assert str(dest) in marker_text
+        stderr = capsys.readouterr().err
+        assert "Migrated 2 config file(s)" in stderr
+
+    def test_existing_type_field_not_overwritten(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        toml_content = (
+            b'type = "ssh"\n'
+            b'alias = "lab_pi"\n'
+            b'host = "192.168.1.10"\n'
+        )
+        (src / "lab_pi.toml").write_bytes(toml_content)
+
+        maybe_migrate_legacy_configs()
+
+        copied = (dest / "lab_pi.toml").read_bytes()
+        assert copied == toml_content  # untouched
+        assert copied.count(b"type =") == 1
+
+    def test_marker_gates_rerun(self, tmp_path, monkeypatch, capsys):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+        (src / "MIGRATED.txt").write_text("migrated_at: yesterday\n", encoding="utf-8")
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 0
+        assert not (dest / "scope_a.toml").exists()
+        # No "Migrated N" stderr line on the no-op branch.
+        assert "Migrated" not in capsys.readouterr().err
+
+    def test_disabled_via_env(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setenv("LABLINK_AUTO_MIGRATE", "0")
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+
+        assert maybe_migrate_legacy_configs() == 0
+        assert not (dest / "scope_a.toml").exists()
+
+    def test_disabled_via_env_case_insensitive(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        # macOS HFS is case-insensitive, so subdir per iteration is numbered
+        # rather than named after the value being tested.
+        for i, val in enumerate(("False", "NO", "false", "no", "0")):
+            src, dest = self._setup(tmp_path / f"case_{i}", monkeypatch)
+            monkeypatch.setenv("LABLINK_AUTO_MIGRATE", val)
+            (src / "scope_a.toml").write_bytes(b'alias = "x"\n')
+
+            assert maybe_migrate_legacy_configs() == 0, f"value {val!r} should disable migration"
+
+    def test_destination_with_existing_toml_skips_migration(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        dest.mkdir()
+        (dest / "existing.toml").write_bytes(b'alias = "x"\n')
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+
+        assert maybe_migrate_legacy_configs() == 0
+        assert not (dest / "scope_a.toml").exists()
+        assert not (src / "MIGRATED.txt").exists()
+
+    def test_destination_with_only_md_files_still_migrates(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        dest.mkdir()
+        (dest / "pre_staged.md").write_text("# pre-staged", encoding="utf-8")
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 1
+        assert (dest / "scope_a.toml").exists()
+        # Pre-staged md preserved.
+        assert (dest / "pre_staged.md").read_text(encoding="utf-8") == "# pre-staged"
+
+    def test_per_file_no_overwrite_logs_warning(self, tmp_path, monkeypatch, capsys):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        dest.mkdir()
+        (dest / "scope_a.md").write_text("pre-staged memory", encoding="utf-8")
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+        (src / "scope_a.md").write_text("legacy memory", encoding="utf-8")
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 1  # only the .toml; .md was skipped
+        assert (dest / "scope_a.md").read_text(encoding="utf-8") == "pre-staged memory"
+        stderr = capsys.readouterr().err
+        assert "Skipped: scope_a.md already exists" in stderr
+
+    def test_malformed_toml_copied_as_is_with_warning(self, tmp_path, monkeypatch, capsys):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        bad = b'this = is not = valid toml\n'
+        (src / "broken.toml").write_bytes(bad)
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 1
+        assert (dest / "broken.toml").read_bytes() == bad
+        stderr = capsys.readouterr().err
+        assert "could not parse broken.toml" in stderr
+
+    def test_no_legacy_dir_is_noop(self, tmp_path, monkeypatch):
+        import lablink.config as cfg_module
+        from lablink.config import maybe_migrate_legacy_configs
+
+        nonexistent = tmp_path / "does_not_exist"
+        dest = tmp_path / "new"
+        monkeypatch.setattr(cfg_module, "_LEGACY_CONFIG_DIR", nonexistent)
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(dest))
+        monkeypatch.delenv("LABLINK_AUTO_MIGRATE", raising=False)
+
+        assert maybe_migrate_legacy_configs() == 0
+        assert not dest.exists()
+
+    def test_ignores_non_toml_non_md_files(self, tmp_path, monkeypatch):
+        from lablink.config import maybe_migrate_legacy_configs
+
+        src, dest = self._setup(tmp_path, monkeypatch)
+        (src / "scope_a.toml").write_bytes(b'alias = "scope_a"\n')
+        (src / "notes.txt").write_text("a side note", encoding="utf-8")
+        (src / "binary.bin").write_bytes(b"\x00\x01")
+
+        n = maybe_migrate_legacy_configs()
+
+        assert n == 1
+        assert (dest / "scope_a.toml").exists()
+        assert not (dest / "notes.txt").exists()
+        assert not (dest / "binary.bin").exists()
