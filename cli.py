@@ -3,17 +3,20 @@
 Thin wrappers over the same shared dispatch path used by the MCP tools.
 Intended for development, debugging, and config validation.
 
-NOTE (Phase 0b): the command structure is still the flat agentlink-visa shape
-(`lablink query`, `lablink write`). The architectural rewrite into per-driver
-subgroups (`lablink visa query ...`, via each driver's register_cli_commands)
-is Phase 0c. The flat query/write commands here are VISA-only.
+Structure mirrors the MCP tool surface (lablink_plan.md §6.6):
+  - Shared lifecycle commands (always present): connect, disconnect, list,
+    diagnose.
+  - Per-driver subgroups (present only when the driver's deps are installed),
+    registered via each driver's register_cli_commands(): e.g.
+    `lablink visa query <alias> "<cmd>"`, `lablink visa write <alias> "<cmd>"`.
 
 Usage:
     lablink list
     lablink diagnose [alias]
     lablink connect <alias>
-    lablink query <alias> "<command>"
-    lablink write <alias> "<command>"
+    lablink disconnect <alias>
+    lablink visa query <alias> "<command>"
+    lablink visa write <alias> "<command>"
 """
 
 import json
@@ -22,10 +25,11 @@ import sys
 import click
 
 from lablink.config import maybe_migrate_legacy_configs
+from lablink.interfaces import DRIVER_REGISTRY
 
 # Shared lifecycle logic + the driver-instance accessor live in mcp_server so
-# the CLI reuses the exact same dispatch path as the MCP tools (no FastMCP
-# server is started by importing it; driver tools register only in main()).
+# the CLI reuses the exact same dispatch path as the MCP tools (importing it
+# does not start a FastMCP server).
 from mcp_server import (
     do_connect,
     do_diagnose,
@@ -41,6 +45,9 @@ def cli() -> None:
     maybe_migrate_legacy_configs()
 
 
+# --- Shared lifecycle commands ---------------------------------------------
+
+
 @cli.command(name="connect")
 @click.argument("alias")
 def connect_cmd(alias: str) -> None:
@@ -49,9 +56,7 @@ def connect_cmd(alias: str) -> None:
     if result["success"]:
         click.echo(f"Connected: {result.get('identity')}")
         if result.get("techmanual_document_ids"):
-            click.echo(
-                f"techmanual document IDs: {result['techmanual_document_ids']}", err=True
-            )
+            click.echo(f"techmanual document IDs: {result['techmanual_document_ids']}", err=True)
     else:
         click.echo(f"Error: {result['error']}", err=True)
         click.echo(f"Hint: {result.get('hint')}", err=True)
@@ -71,52 +76,6 @@ def disconnect_cmd(alias: str) -> None:
         sys.exit(1)
 
 
-@cli.command(name="query")
-@click.argument("alias")
-@click.argument("command")
-def query_cmd(alias: str, command: str) -> None:
-    """Send a SCPI query COMMAND to ALIAS and print the response (VISA)."""
-    result = do_connect(alias)
-    if not result["success"]:
-        click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result.get('hint')}", err=True)
-        sys.exit(1)
-
-    qresult = get_driver("visa").visa_query_impl(alias, command)
-    if qresult["success"]:
-        click.echo(qresult["raw"])
-    else:
-        click.echo(f"Error: {qresult['error']}", err=True)
-        click.echo(f"Hint: {qresult.get('hint')}", err=True)
-        do_disconnect(alias)
-        sys.exit(1)
-
-    do_disconnect(alias)
-
-
-@cli.command(name="write")
-@click.argument("alias")
-@click.argument("command")
-def write_cmd(alias: str, command: str) -> None:
-    """Send a SCPI write COMMAND to ALIAS, no response expected (VISA)."""
-    result = do_connect(alias)
-    if not result["success"]:
-        click.echo(f"Error: {result['error']}", err=True)
-        click.echo(f"Hint: {result.get('hint')}", err=True)
-        sys.exit(1)
-
-    wresult = get_driver("visa").visa_write_impl(alias, command)
-    if wresult["success"]:
-        click.echo(f"Sent: {command}", err=True)
-    else:
-        click.echo(f"Error: {wresult['error']}", err=True)
-        click.echo(f"Hint: {wresult.get('hint')}", err=True)
-        do_disconnect(alias)
-        sys.exit(1)
-
-    do_disconnect(alias)
-
-
 @cli.command(name="list")
 def list_cmd() -> None:
     """List all configured device aliases."""
@@ -130,8 +89,7 @@ def list_cmd() -> None:
         if d["status"] == "invalid":
             click.echo(f"Warning: {d['alias']}.toml: {d.get('error')}", err=True)
             continue
-        line = f"{d['alias']}  [{d['type']}]  {d['status']}"
-        click.echo(line)
+        click.echo(f"{d['alias']}  [{d['type']}]  {d['status']}")
         if d.get("description"):
             click.echo(f"  {d['description']}")
 
@@ -139,11 +97,15 @@ def list_cmd() -> None:
 @cli.command(name="diagnose")
 @click.argument("alias", required=False, default=None)
 def diagnose_cmd(alias: str | None) -> None:
-    """Run diagnostics for ALIAS, or a system audit when ALIAS is omitted."""
+    """Run diagnostics for ALIAS, or a system audit when ALIAS is omitted.
+
+    The structured report is printed as JSON to stdout; a human-readable
+    summary of issues (if any) goes to stderr.
+    """
     report = do_diagnose(alias)
 
     if report.get("ready"):
-        click.echo("All checks passed. Ready to connect.")
+        click.echo("All checks passed. Ready to connect.", err=True)
     else:
         items = report.get("action_items", [])
         click.echo(f"{len(items)} issue(s) found:", err=True)
@@ -151,6 +113,24 @@ def diagnose_cmd(alias: str | None) -> None:
             click.echo(f"  {i}. {item}", err=True)
 
     click.echo(json.dumps(report, indent=2))
+
+
+# --- Per-driver subgroups (registered when the driver's deps are present) ---
+
+
+def _register_driver_clis(group: click.Group = cli) -> None:
+    """Attach each deps-present driver's CLI subgroup to `group`.
+
+    Mirrors the MCP-side register_driver_tools() gating: a driver whose Python
+    deps are missing does not contribute a CLI subgroup.
+    """
+    for type_name, cls in DRIVER_REGISTRY.items():
+        if any(not present for _, present in cls.check_python_deps()):
+            continue
+        get_driver(type_name).register_cli_commands(group)
+
+
+_register_driver_clis()
 
 
 if __name__ == "__main__":

@@ -274,3 +274,22 @@ class TestAuditHooks:
         deps = VisaDriver.system_dep_check()
         assert len(deps) == 1
         assert deps[0].name == "libusb"
+
+
+class TestEventLogContract:
+    def test_tool_call_logs_canonical_fields(self, tmp_path, monkeypatch):
+        """§6.4: every tool call produces a log entry carrying ts/op/alias/success."""
+        import json
+
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        resource = MagicMock()
+        resource.query.return_value = "1000\n"
+        _register_session(resource, _config())
+
+        VisaDriver().visa_query_impl("test_scope", "MEAS?")
+
+        entry = json.loads(list(tmp_path.glob("*.jsonl"))[0].read_text().strip())
+        assert {"ts", "op", "alias", "success"} <= set(entry)
+        assert entry["op"] == "visa_query"
+        assert entry["alias"] == "test_scope"
+        assert entry["success"] is True

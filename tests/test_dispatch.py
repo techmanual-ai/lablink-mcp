@@ -85,3 +85,35 @@ def test_register_driver_tools_registers_when_present(monkeypatch):
 
     tools = {t.name for t in asyncio.run(test_mcp.list_tools())}
     assert {"visa_query", "visa_write"} <= tools
+
+
+# --- Phase 0c expanded dispatch contracts ----------------------------------
+
+
+def test_diagnose_no_alias_enumerates_all_drivers():
+    report = mcp_server.do_diagnose()
+    assert report["alias"] is None
+    # Every registered driver resolves to exactly one status (no "unknown").
+    assert set(report["drivers"].keys()) == set(DRIVER_REGISTRY.keys())
+    for entry in report["drivers"].values():
+        assert entry["status"] in {"ready", "missing_python", "missing_system"}
+
+
+def test_register_cli_commands_gated_on_deps(monkeypatch):
+    import click
+
+    import cli as cli_module
+
+    # deps present -> visa subgroup attached
+    present_group = click.Group()
+    monkeypatch.setattr(cli_module, "get_driver", mcp_server.get_driver)
+    cli_module._register_driver_clis(present_group)
+    assert "visa" in present_group.commands
+
+    # deps missing -> no subgroup
+    monkeypatch.setattr(
+        VisaDriver, "check_python_deps", classmethod(lambda cls: [("pyvisa", False)])
+    )
+    missing_group = click.Group()
+    cli_module._register_driver_clis(missing_group)
+    assert "visa" not in missing_group.commands

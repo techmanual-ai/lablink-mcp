@@ -30,95 +30,92 @@ from lablink.config import (
 )
 from lablink.exceptions import ConfigError
 from lablink.interfaces import DRIVER_REGISTRY
-from lablink.scpi_logger import log_event
+from lablink.event_logger import log_event
 
-# NOTE: _INSTRUCTIONS is intentionally still VISA-flavored. The multi-driver
-# rewrite (with a runtime-aware loaded-driver count) is Phase 0c task 3. VISA is
-# the only registered driver at the end of 0b, so this text does not mislead.
-_INSTRUCTIONS = """
-You are operating LabLink, an MCP server for direct AI agent control of
-test and measurement instruments via VISA/SCPI.
+_INSTRUCTIONS_TEMPLATE = """
+You are operating LabLink, a local-first MCP server that gives you direct,
+structured control over the devices and services in a lab — test instruments
+(VISA/SCPI) and, as their extras are installed, SSH hosts, REST APIs, serial
+devices, and user-supplied Python environments.
 
-## Tool surface
+## Architecture
 
-Shared lifecycle tools (any device, identified by alias):
-  connect, disconnect, list_devices, diagnose
-Per-driver operation tools (registered only when the driver's deps are present):
-  VISA: visa_query, visa_write
+LabLink is multi-driver capable; {driver_count} driver(s) are currently loaded:
+{driver_list}. Call diagnose() (no alias) for the authoritative active set.
+Each device is addressed by an *alias* whose config `type` field selects the
+driver. Two tool layers:
 
-## Your role in instrument setup
+- Shared lifecycle tools (always present): connect, disconnect, list_devices,
+  diagnose. The driver is resolved from the alias's config.
+- Per-driver operation tools (present only when that driver's deps are
+  installed) — e.g. visa_query, visa_write. **Each operation tool's docstring
+  is the source of truth for that protocol's semantics; read it rather than
+  assuming behavior carries over from another protocol.**
 
-You own the instrument configuration. Users should not need to create or edit
-config files manually. When a user mentions an instrument or asks to connect:
+## Discovery flow
 
-1. Call list_devices() to check for existing configs.
-2. If no config exists, discover connected instruments:
-   python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
-   The output is a tuple of VISA resource strings, e.g.:
-   ('USB0::0x0699::0x0527::C012345::INSTR',)
-   If the tuple is empty, the instrument may be off, disconnected, or require a
-   driver — diagnose before asking the user.
-3. Write the config file to ~/.lablink/devices/<alias>.toml. Include a
-   type = "visa" field. Use the manufacturer and model from the IDN response or
-   the user's description. Default termination values work for most instruments:
-     read_termination = "\\n"
-     write_termination = "\\n"
-   Name the alias using the convention <manufacturer>_<model>, lowercase with
-   underscores (e.g. siglent_sds1104xe, tektronix_mso44, keysight_dsox1204g).
-4. If techmanual.ai is available, search for the model number and extract document
-   IDs from the results. Instruments typically have two relevant documents: a user
-   manual and a programming guide. Add both to the config:
-     techmanual_document_ids = [<user_manual_id>, <programming_guide_id>]
-5. Call connect(alias) to open the session and confirm.
+1. Read the loaded-driver count above.
+2. list_devices() — configured aliases with their type and status
+   ("connected" / "configured" / "invalid"). "configured" means the config
+   parsed, NOT that the device is reachable.
+3. diagnose() with no alias — system audit (installed drivers, missing system
+   deps, install commands). diagnose(alias) — targeted reachability for one
+   device.
 
-## Config file format
+## Device setup
 
-~/.lablink/devices/<alias>.toml — one file per instrument.
+You own device configuration — do not ask the user to hand-edit files. Write
+~/.lablink/devices/<alias>.toml with a `type` field plus that driver's required
+fields. Alias convention: <vendor>_<model> for instruments, <role>_<host> for
+compute targets; lowercase with underscores. For VISA, discover the resource
+string with:
+  python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
+An empty result means the instrument is off, unplugged, or needs a backend —
+diagnose before asking the user.
 
-Required: type, alias, resource_string, timeout_ms
-Optional: manufacturer, model_number, read_termination, write_termination,
-          description, techmanual_document_ids (list of ints, e.g. [1291, 1323])
+## Device memory
 
-The legacy single-ID format (techmanual_document_id = 142) is still accepted
-and auto-converted to a one-element list on load.
+connect() returns a `device_memory` field: the content of
+~/.lablink/devices/<alias>.md, where prior agents recorded device-specific
+quirks. Read it before issuing commands. (A deprecated `instrument_memory`
+field mirrors `device_memory` for back-compat through Phase 1; prefer
+`device_memory`.)
 
-## Using techmanual.ai
+## techmanual.ai (documented devices)
 
-If the techmanual.ai MCP tool is available, use it as the primary SCPI and
-instrument reference — do not rely on training data alone for command syntax.
+For instruments, connect() returns techmanual_document_ids. If the techmanual.ai
+MCP tool is available, consult those documents before issuing commands instead
+of relying on training data. If the list is empty, search by manufacturer and
+model_number and write the discovered IDs back into the config so later
+sessions skip the search.
 
-**On every connect:** check the techmanual_document_ids list in the response.
-- If non-empty: query those documents directly before issuing any SCPI.
-- If empty and techmanual is available: search by manufacturer and
-  model_number, then update the config with the discovered IDs.
+## Logging
 
-## Troubleshooting
-
-Call diagnose(alias) first. It checks dependencies, the VISA backend, available
-resources, and interface-specific reachability. Use its action_items list to
-guide the user step by step. Call diagnose() with no alias for a system audit
-of which drivers are installed and what is missing.
-
-## Device Memory
-
-Each device may have a memory file at ~/.lablink/devices/<alias>.md containing
-device-specific quirks documented by previous agents. connect() returns a
-device_memory field — read it before issuing any commands.
-
-## VISA/SCPI Behavior
-
-**Write is fire-and-forget.** visa_write returning success confirms bytes were
-delivered without a VISA-layer error. It does not confirm the instrument
-executed the command. Follow any state-changing write with a confirming
-visa_query.
-
-**A query timeout has three distinct causes:** (1) command unsupported by this
-instrument, (2) wrong syntax for this firmware generation, (3) instrument busy
-or settling — issue *OPC? first or increase timeout_ms.
-
-**Session log.** All tool I/O is logged to ~/.lablink/logs/YYYY-MM-DD.jsonl by
-default. Disable by setting LABLINK_LOG_DIR to an empty string.
+Every tool call is appended to ~/.lablink/logs/YYYY-MM-DD.jsonl (op, alias,
+success, plus per-tool extras). Disable by setting LABLINK_LOG_DIR to "".
 """
+
+
+def _loaded_driver_types() -> list[str]:
+    """Type names whose Python deps are all present (so their tools register)."""
+    return [
+        type_name
+        for type_name, cls in DRIVER_REGISTRY.items()
+        if all(present for _, present in cls.check_python_deps())
+    ]
+
+
+def _build_instructions() -> str:
+    loaded = _loaded_driver_types()
+    return _INSTRUCTIONS_TEMPLATE.format(
+        driver_count=len(loaded),
+        driver_list=", ".join(loaded)
+        if loaded
+        else "(none — install an extra, e.g. `pip install lablink-mcp[visa]`)",
+    )
+
+
+_INSTRUCTIONS = _build_instructions()
 
 mcp = FastMCP("lablink-mcp", instructions=_INSTRUCTIONS)
 

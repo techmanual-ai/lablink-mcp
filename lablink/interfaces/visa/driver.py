@@ -28,7 +28,7 @@ from lablink.base import (
     SystemDepStatus,
 )
 from lablink.interfaces.visa.config import VisaDriverConfig
-from lablink.scpi_logger import log_event
+from lablink.event_logger import log_event
 
 _DEFAULT_VISA_BACKEND = "@py"
 
@@ -431,9 +431,47 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
             return driver.visa_write_impl(alias, command, timeout_ms)
 
     def register_cli_commands(self, cli_group) -> None:
+        import sys
+
         import click
 
+        from lablink.config import load_config
+        from lablink.exceptions import ConfigError
+
         driver = self
+
+        def _with_session(alias: str, op):
+            """Open a VISA session, run op(), and always disconnect.
+
+            The CLI is per-invocation (no session persists across commands), so
+            each VISA command opens and closes its own session — matching the
+            debug-UX contract documented in current_status.md.
+            """
+            try:
+                config = load_config(alias)
+            except ConfigError as exc:
+                click.echo(f"Error: {exc}", err=True)
+                sys.exit(1)
+            conn = driver.connect(config)
+            if not conn.success:
+                click.echo(f"Error: {conn.error}", err=True)
+                click.echo(f"Hint: {conn.hint}", err=True)
+                sys.exit(1)
+            try:
+                return op()
+            finally:
+                session = session_registry.get_any(alias)
+                if session is not None:
+                    driver.disconnect(session)
+                    session_registry.deregister(alias)
+
+        def _emit(result: dict, on_success) -> None:
+            if result["success"]:
+                on_success(result)
+            else:
+                click.echo(f"Error: {result['error']}", err=True)
+                click.echo(f"Hint: {result['hint']}", err=True)
+                sys.exit(1)
 
         @cli_group.group(name="visa")
         def visa_group() -> None:
@@ -444,30 +482,16 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
         @click.argument("command")
         def visa_query_cmd(alias: str, command: str) -> None:
             """Send a SCPI query COMMAND to ALIAS and print the response."""
-            import sys
-
-            result = driver.visa_query_impl(alias, command)
-            if result["success"]:
-                click.echo(result["raw"])
-            else:
-                click.echo(f"Error: {result['error']}", err=True)
-                click.echo(f"Hint: {result['hint']}", err=True)
-                sys.exit(1)
+            result = _with_session(alias, lambda: driver.visa_query_impl(alias, command))
+            _emit(result, lambda r: click.echo(r["raw"]))
 
         @visa_group.command(name="write")
         @click.argument("alias")
         @click.argument("command")
         def visa_write_cmd(alias: str, command: str) -> None:
             """Send a SCPI write COMMAND to ALIAS (no response expected)."""
-            import sys
-
-            result = driver.visa_write_impl(alias, command)
-            if result["success"]:
-                click.echo(f"Sent: {command}", err=True)
-            else:
-                click.echo(f"Error: {result['error']}", err=True)
-                click.echo(f"Hint: {result['hint']}", err=True)
-                sys.exit(1)
+            result = _with_session(alias, lambda: driver.visa_write_impl(alias, command))
+            _emit(result, lambda r: click.echo(f"Sent: {command}", err=True))
 
     # --- system audit hooks ---
 
