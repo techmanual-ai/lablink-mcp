@@ -1,14 +1,14 @@
-"""AgentLink-Visa CLI.
+"""LabLink CLI.
 
 Thin wrappers over the same core functions used by the MCP tools.
 Intended for development, debugging, and instrument config validation.
 
 Usage:
-    agentlink list
-    agentlink diagnose [alias]
-    agentlink connect <alias>
-    agentlink query <alias> "<command>"
-    agentlink write <alias> "<command>"
+    lablink list
+    lablink diagnose [alias]
+    lablink connect <alias>
+    lablink query <alias> "<command>"
+    lablink write <alias> "<command>"
 """
 
 import json
@@ -16,15 +16,15 @@ import sys
 
 import click
 
-from agentlink.config import get_config_dir, list_configs, load_config
-from agentlink.diagnostics import run_diagnostics
-from agentlink.exceptions import ConfigError
-from agentlink.tools import connect, disconnect, query, write
+from lablink.config import get_config_dir, list_configs, load_config
+from lablink.diagnostics import run_diagnostics
+from lablink.exceptions import ConfigError
+from lablink.tools import connect, disconnect, query, write
 
 
 @click.group()
 def cli() -> None:
-    """AgentLink-Visa: AI agent control of T&M equipment via VISA."""
+    """LabLink: AI agent control of T&M equipment via VISA."""
 
 
 @cli.command(name="connect")
@@ -106,13 +106,13 @@ def list_cmd() -> None:
 
     if not config_dir.exists():
         click.echo(f"Config directory not found: {config_dir}", err=True)
-        click.echo("Create it with: mkdir -p ~/.agentlink/instruments", err=True)
+        click.echo("Create it with: mkdir -p ~/.lablink/devices", err=True)
         sys.exit(1)
 
     toml_files = sorted(config_dir.glob("*.toml"))
     if not toml_files:
         click.echo("No instrument configs found.", err=True)
-        click.echo("Add a <alias>.toml to ~/.agentlink/instruments/ to get started.", err=True)
+        click.echo("Add a <alias>.toml to ~/.lablink/devices/ to get started.", err=True)
         sys.exit(1)
 
     found_any = False

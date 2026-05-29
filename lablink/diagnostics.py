@@ -1,4 +1,4 @@
-"""Connection diagnostics for AgentLink-Visa.
+"""Connection diagnostics for LabLink.
 
 Checks installed dependencies, VISA backend health, available hardware
 interfaces, and (optionally) alias-specific reachability. Returns a
@@ -16,8 +16,8 @@ from typing import Any, Optional
 
 import pyvisa
 
-from agentlink.config import get_config_dir, load_config, load_instrument_memory
-from agentlink.exceptions import ConfigError
+from lablink.config import get_config_dir, load_config, load_instrument_memory
+from lablink.exceptions import ConfigError
 
 
 def _dep_info(package: str) -> dict[str, Any]:
@@ -113,7 +113,7 @@ def run_diagnostics(alias: Optional[str] = None) -> dict[str, Any]:
         )
 
     # --- VISA backend ---
-    visa_backend = os.environ.get("AGENTLINK_VISA_BACKEND", "@py")
+    visa_backend = os.environ.get("LABLINK_VISA_BACKEND", "@py")
     visa: dict[str, Any] = {"backend": visa_backend}
     resources: list[str] = []
 
@@ -182,7 +182,7 @@ def run_diagnostics(alias: Optional[str] = None) -> dict[str, Any]:
     if not config_dir.exists():
         action_items.append(
             f"Instrument config directory does not exist: {config_dir}. "
-            "Create it with: mkdir -p ~/.agentlink/instruments"
+            "Create it with: mkdir -p ~/.lablink/devices"
         )
     elif not toml_files:
         action_items.append(
@@ -262,7 +262,7 @@ def run_diagnostics(alias: Optional[str] = None) -> dict[str, Any]:
             alias_check["config_error"] = str(exc)
             action_items.append(
                 f"Config for '{alias}' failed to load: {exc}. "
-                f"Ensure ~/.agentlink/instruments/{alias}.toml exists and has all required fields."
+                f"Ensure ~/.lablink/devices/{alias}.toml exists and has all required fields."
             )
 
         if alias_check.get("config_ok"):

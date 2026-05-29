@@ -15,7 +15,7 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib  # type: ignore[no-redef]
 
-from agentlink.exceptions import ConfigError
+from lablink.exceptions import ConfigError
 
 _REQUIRED_FIELDS = (
     "alias",
@@ -27,7 +27,7 @@ _REQUIRED_FIELDS = (
     "write_termination",
 )
 
-_DEFAULT_CONFIG_DIR = Path.home() / ".agentlink" / "instruments"
+_DEFAULT_CONFIG_DIR = Path.home() / ".lablink" / "devices"
 
 
 @dataclass
@@ -62,7 +62,7 @@ def _load_document_ids(raw: dict) -> list[int]:
 
 def get_config_dir() -> Path:
     """Return the instrument config directory, applying env override if set."""
-    env_override = os.environ.get("AGENTLINK_CONFIG_DIR")
+    env_override = os.environ.get("LABLINK_CONFIG_DIR")
     return Path(env_override) if env_override else _DEFAULT_CONFIG_DIR
 
 
@@ -112,7 +112,7 @@ def load_config(alias: str) -> InstrumentConfig:
 def load_instrument_memory(alias: str) -> Optional[str]:
     """Return the instrument memory file content for the given alias, or None.
 
-    The memory file (~/.agentlink/instruments/<alias>.md) is an optional
+    The memory file (~/.lablink/devices/<alias>.md) is an optional
     agent-maintained document of device-specific quirks and workarounds.
     Returns None if the file does not exist. Never raises.
 

@@ -1,23 +1,47 @@
-# agentlink-visa
+# lablink-mcp
 
-<!-- mcp-name: io.github.techmanual-ai/agentlink-visa -->
+<!-- mcp-name: io.github.techmanual-ai/lablink-mcp -->
 
 MCP server that gives AI agents direct, structured control of test and measurement equipment via PyVISA. Connect your agent to real hardware — oscilloscopes, spectrum analyzers, power supplies, DMMs, and any other VISA-compatible instrument.
 
-**Works standalone.** AgentLink-Visa is a complete, self-contained tool. Pair it with [techmanual.ai](https://techmanual.ai) to give your agent both hardware access and instrument documentation, but neither product requires the other.
+**Works standalone.** LabLink is a complete, self-contained tool. Pair it with [techmanual.ai](https://techmanual.ai) to give your agent both hardware access and instrument documentation, but neither product requires the other.
+
+---
+
+## Migration from agentlink-visa
+
+The `agentlink-visa` PyPI package has been renamed to `lablink-mcp`. **This is a
+breaking change.** If you previously installed `agentlink-visa`:
+
+1. Uninstall the old package: `pip uninstall agentlink-visa`
+2. Install the new one: `pip install lablink-mcp`
+3. Update your MCP client config: change `"command": "agentlink-mcp"` to
+   `"command": "lablink-mcp"`. The CLI command renames the same way:
+   `agentlink ...` → `lablink ...`.
+4. Update env vars in any scripts: `AGENTLINK_CONFIG_DIR`, `AGENTLINK_LOG_DIR`,
+   and `AGENTLINK_VISA_BACKEND` are now `LABLINK_*`.
+
+**Your existing instrument configs are migrated automatically.** On first run,
+`lablink` and `lablink-mcp` will copy every `*.toml` and `*.md` from
+`~/.agentlink/instruments/` into `~/.lablink/devices/`, injecting
+`type = "visa"` into any migrated TOML that lacks it. A one-line summary is
+printed to stderr and a `MIGRATED.txt` marker is written to the old directory.
+To skip migration (e.g. on shared machines), set `LABLINK_AUTO_MIGRATE=0`.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list of renamed names and paths.
 
 ---
 
 ## Install
 
 ```bash
-pip install agentlink-visa
+pip install lablink-mcp
 ```
 
 > **Not yet on PyPI?** Clone the repo and install locally:
 > ```bash
-> git clone https://github.com/techmanual-ai/agentlink-visa
-> cd agentlink-visa
+> git clone https://github.com/techmanual-ai/lablink-mcp
+> cd lablink-mcp
 > pip install -e .
 > ```
 
@@ -30,11 +54,11 @@ pip install agentlink-visa
 Create the config directory and add one TOML file per instrument:
 
 ```bash
-mkdir -p ~/.agentlink/instruments
+mkdir -p ~/.lablink/devices
 ```
 
 ```toml
-# ~/.agentlink/instruments/tek_mso44.toml
+# ~/.lablink/devices/tek_mso44.toml
 
 alias = "tek_mso44"
 resource_string = "USB0::0x0699::0x0527::C012345::INSTR"
@@ -55,13 +79,13 @@ This prints a tuple of connected instruments, e.g. `('USB0::0x0699::0x0527::C012
 
 `read_termination` and `write_termination` are `"\n"` for most instruments. Copy the example above as a safe starting point; change only if your instrument requires it.
 
-See [examples/instruments/example_scope.toml](examples/instruments/example_scope.toml) for a full template.
+See [examples/devices/example_scope.toml](examples/devices/example_scope.toml) for a full template.
 
 ### 2. Verify with the CLI
 
 ```bash
-agentlink list            # confirm the config is found
-agentlink connect tek_mso44   # open a session and check IDN response
+lablink list            # confirm the config is found
+lablink connect tek_mso44   # open a session and check IDN response
 ```
 
 A successful connect prints the instrument's identity string. If it errors, the hint field will tell you why.
@@ -73,8 +97,8 @@ A successful connect prints the instrument's identity string. If it errors, the 
 ```json
 {
   "mcpServers": {
-    "agentlink-visa": {
-      "command": "agentlink-mcp"
+    "lablink-mcp": {
+      "command": "lablink-mcp"
     }
   }
 }
@@ -85,8 +109,8 @@ A successful connect prints the instrument's identity string. If it errors, the 
 ```json
 {
   "mcpServers": {
-    "agentlink-visa": {
-      "command": "agentlink-mcp"
+    "lablink-mcp": {
+      "command": "lablink-mcp"
     }
   }
 }
@@ -116,7 +140,7 @@ All tools return structured dicts. On failure:
 
 ## Instrument Configuration
 
-One TOML file per instrument at `~/.agentlink/instruments/<alias>.toml`.
+One TOML file per instrument at `~/.lablink/devices/<alias>.toml`.
 
 **Required fields:**
 
@@ -134,13 +158,13 @@ One TOML file per instrument at `~/.agentlink/instruments/<alias>.toml`.
 
 | Field | Description |
 |-------|-------------|
-| `description` | Shown in `agentlink list` output |
+| `description` | Shown in `lablink list` output |
 | `techmanual_document_id` | Links to the instrument's manual in techmanual.ai (see [Using with techmanual.ai](#using-with-techmanualai-optional)) |
 
 **Override the config directory:**
 
 ```bash
-export AGENTLINK_CONFIG_DIR=/path/to/your/instruments/
+export LABLINK_CONFIG_DIR=/path/to/your/instruments/
 ```
 
 ---
@@ -150,12 +174,12 @@ export AGENTLINK_CONFIG_DIR=/path/to/your/instruments/
 The CLI is a development and debugging tool — not intended for production agent use.
 
 ```bash
-agentlink list                              # list all configured instruments
-agentlink diagnose                          # check VISA backend and available resources
-agentlink diagnose tek_mso44               # add alias-specific reachability checks
-agentlink connect tek_mso44                # open session, print IDN
-agentlink query tek_mso44 "MEAS:FREQ? CH1" # send query, print response
-agentlink write tek_mso44 "CH1:SCALE 0.5"  # send command
+lablink list                              # list all configured instruments
+lablink diagnose                          # check VISA backend and available resources
+lablink diagnose tek_mso44               # add alias-specific reachability checks
+lablink connect tek_mso44                # open session, print IDN
+lablink query tek_mso44 "MEAS:FREQ? CH1" # send query, print response
+lablink write tek_mso44 "CH1:SCALE 0.5"  # send command
 ```
 
 `diagnose` prints a human-readable issue list to stderr and the full JSON report to stdout. Run it first if `connect` fails.
@@ -180,12 +204,12 @@ agentlink write tek_mso44 "CH1:SCALE 0.5"  # send command
 
 ## VISA Backend
 
-AgentLink-Visa uses **pyvisa-py** by default — a pure-Python implementation with no additional software required.
+LabLink uses **pyvisa-py** by default — a pure-Python implementation with no additional software required.
 
 To use NI-VISA instead (e.g. for GPIB or if you already have it installed):
 
 ```bash
-export AGENTLINK_VISA_BACKEND=@ni
+export LABLINK_VISA_BACKEND=@ni
 ```
 
 NI-VISA can be downloaded from [ni.com/visa](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html).
@@ -222,5 +246,5 @@ All tests mock pyvisa — no real hardware required.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENTLINK_CONFIG_DIR` | `~/.agentlink/instruments/` | Instrument config directory |
-| `AGENTLINK_VISA_BACKEND` | `@py` | pyvisa backend (`@py` or `@ni`) |
+| `LABLINK_CONFIG_DIR` | `~/.lablink/devices/` | Instrument config directory |
+| `LABLINK_VISA_BACKEND` | `@py` | pyvisa backend (`@py` or `@ni`) |

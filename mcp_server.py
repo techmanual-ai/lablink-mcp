@@ -1,15 +1,15 @@
-"""AgentLink-Visa MCP server entrypoint.
+"""LabLink MCP server entrypoint.
 
-Installed as the 'agentlink-mcp' console script via pip install.
-Configure in your MCP client as: {"command": "agentlink-mcp"}
+Installed as the 'lablink-mcp' console script via pip install.
+Configure in your MCP client as: {"command": "lablink-mcp"}
 """
 
 from fastmcp import FastMCP
-from agentlink.diagnostics import run_diagnostics
-from agentlink.tools import connect, disconnect, query, write
+from lablink.diagnostics import run_diagnostics
+from lablink.tools import connect, disconnect, query, write
 
 _INSTRUCTIONS = """
-You are operating AgentLink-Visa, an MCP server for direct AI agent control of
+You are operating LabLink, an MCP server for direct AI agent control of
 test and measurement instruments via VISA/SCPI.
 
 ## Your role in instrument setup
@@ -17,14 +17,14 @@ test and measurement instruments via VISA/SCPI.
 You own the instrument configuration. Users should not need to create or edit
 config files manually. When a user mentions an instrument or asks to connect:
 
-1. Run `agentlink list` (via Bash) to check for existing configs.
+1. Run `lablink list` (via Bash) to check for existing configs.
 2. If no config exists, discover connected instruments:
    python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
    The output is a tuple of VISA resource strings, e.g.:
    ('USB0::0x0699::0x0527::C012345::INSTR',)
    If the tuple is empty, the instrument may be off, disconnected, or require a
    driver — diagnose before asking the user.
-3. Write the config file to ~/.agentlink/instruments/<alias>.toml.
+3. Write the config file to ~/.lablink/devices/<alias>.toml.
    Use the manufacturer and model from the IDN response or the user's description.
    Default termination values work for most instruments:
      read_termination = "\\n"
@@ -40,7 +40,7 @@ config files manually. When a user mentions an instrument or asks to connect:
 
 ## Config file format
 
-~/.agentlink/instruments/<alias>.toml — one file per instrument.
+~/.lablink/devices/<alias>.toml — one file per instrument.
 
 Required: alias, resource_string, manufacturer, model_number, timeout_ms,
           read_termination, write_termination
@@ -90,7 +90,7 @@ take themselves (e.g. powering on the instrument, plugging in a cable).
 ## Instrument Memory
 
 Each instrument may have a memory file at
-~/.agentlink/instruments/<alias>.md containing device-specific quirks,
+~/.lablink/devices/<alias>.md containing device-specific quirks,
 failure modes, and workarounds documented by previous agents.
 
 `connect_instrument` always returns an `instrument_memory` field — read it
@@ -116,7 +116,7 @@ Example entry:
 - `CURSOR_X1?` timeout: SDS1104X-E older cursor arch not in prog guide doc 1323; writes work, readback does not → use `PAVA FREQ` for period
 ```
 
-Write the file directly: ~/.agentlink/instruments/<alias>.md
+Write the file directly: ~/.lablink/devices/<alias>.md
 
 ## VISA/SCPI Behavior
 
@@ -149,20 +149,20 @@ problem.
 turn execute on the same held-open session. Fire multiple independent queries
 in one turn to snapshot instrument state cheaply.
 
-**Session log.** All SCPI I/O is logged to ~/.agentlink/logs/YYYY-MM-DD.jsonl
-by default. Override the directory with AGENTLINK_LOG_DIR; disable logging by
-setting AGENTLINK_LOG_DIR to an empty string. Review the log to verify command
+**Session log.** All SCPI I/O is logged to ~/.lablink/logs/YYYY-MM-DD.jsonl
+by default. Override the directory with LABLINK_LOG_DIR; disable logging by
+setting LABLINK_LOG_DIR to an empty string. Review the log to verify command
 history or diagnose failures post-hoc.
 """
 
-mcp = FastMCP("agentlink-visa", instructions=_INSTRUCTIONS)
+mcp = FastMCP("lablink-mcp", instructions=_INSTRUCTIONS)
 
 
 @mcp.tool()
 def connect_instrument(alias: str) -> dict:
     """Open a VISA session to a configured instrument and verify with *IDN?.
 
-    Before calling this, ensure ~/.agentlink/instruments/<alias>.toml exists.
+    Before calling this, ensure ~/.lablink/devices/<alias>.toml exists.
     If it does not, create it — do not ask the user to do so. See server
     instructions for the full setup sequence.
 

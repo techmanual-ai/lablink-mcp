@@ -2,9 +2,9 @@
 
 Logs all instrument I/O to JSONL files in the log directory.
 
-Default log directory: ~/.agentlink/logs/
-Override:  set AGENTLINK_LOG_DIR to a different path.
-Disable:   set AGENTLINK_LOG_DIR to an empty string.
+Default log directory: ~/.lablink/logs/
+Override:  set LABLINK_LOG_DIR to a different path.
+Disable:   set LABLINK_LOG_DIR to an empty string.
 
 One file per day: <log_dir>/YYYY-MM-DD.jsonl
 Each line is a JSON object with a 'ts' timestamp and event fields.
@@ -16,16 +16,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-_DEFAULT_LOG_DIR = Path.home() / ".agentlink" / "logs"
+_DEFAULT_LOG_DIR = Path.home() / ".lablink" / "logs"
 
 
 def get_log_dir() -> Optional[Path]:
     """Return the active log directory, or None if logging is disabled.
 
-    Logging is disabled only when AGENTLINK_LOG_DIR is explicitly set to an
+    Logging is disabled only when LABLINK_LOG_DIR is explicitly set to an
     empty string. If the variable is unset, the default directory is used.
     """
-    env_val = os.environ.get("AGENTLINK_LOG_DIR")
+    env_val = os.environ.get("LABLINK_LOG_DIR")
     if env_val is not None and env_val.strip() == "":
         return None
     return Path(env_val) if env_val else _DEFAULT_LOG_DIR

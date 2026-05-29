@@ -1,4 +1,4 @@
-"""MCP tool implementations for AgentLink-Visa.
+"""MCP tool implementations for LabLink.
 
 These four functions implement the v0.1 tool surface. They never interact with
 pyvisa directly — all VISA access goes through session.py. All exceptions are
@@ -10,10 +10,10 @@ from typing import Any
 
 import pyvisa
 
-from agentlink.config import load_config, load_instrument_memory
-from agentlink.exceptions import ConfigError, SessionError
-from agentlink import session as _session
-from agentlink.scpi_logger import log_event
+from lablink.config import load_config, load_instrument_memory
+from lablink.exceptions import ConfigError, SessionError
+from lablink import session as _session
+from lablink.scpi_logger import log_event
 
 
 def connect(alias: str) -> dict[str, Any]:
@@ -44,7 +44,7 @@ def connect(alias: str) -> dict[str, Any]:
         return {
             "success": False,
             "error": str(exc),
-            "hint": f"Check that ~/.agentlink/instruments/{alias}.toml exists and has all required fields.",
+            "hint": f"Check that ~/.lablink/devices/{alias}.toml exists and has all required fields.",
         }
 
     try:

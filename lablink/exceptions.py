@@ -1,4 +1,4 @@
-"""Typed exceptions for AgentLink-Visa."""
+"""Typed exceptions for LabLink."""
 
 
 class ConfigError(Exception):

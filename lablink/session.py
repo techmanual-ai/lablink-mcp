@@ -9,8 +9,8 @@ from typing import Any, Optional
 
 import pyvisa
 
-from agentlink.config import InstrumentConfig
-from agentlink.exceptions import SessionError
+from lablink.config import InstrumentConfig
+from lablink.exceptions import SessionError
 
 _sessions: dict[str, Any] = {}
 
@@ -23,7 +23,7 @@ def _get_resource_manager() -> pyvisa.ResourceManager:
     """Return the shared ResourceManager, creating it on first call."""
     global _resource_manager
     if _resource_manager is None:
-        backend = os.environ.get("AGENTLINK_VISA_BACKEND", _DEFAULT_VISA_BACKEND)
+        backend = os.environ.get("LABLINK_VISA_BACKEND", _DEFAULT_VISA_BACKEND)
         _resource_manager = pyvisa.ResourceManager(backend)
     return _resource_manager
 

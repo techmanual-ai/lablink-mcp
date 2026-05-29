@@ -1,4 +1,4 @@
-"""Unit tests for AgentLink-Visa MCP tools.
+"""Unit tests for LabLink MCP tools.
 
 All tests mock pyvisa — no real hardware required.
 """
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentlink.exceptions import ConfigError
+from lablink.exceptions import ConfigError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -17,7 +17,7 @@ from agentlink.exceptions import ConfigError
 
 def _make_config(**overrides):
     """Return a minimal valid InstrumentConfig, with optional field overrides."""
-    from agentlink.config import InstrumentConfig
+    from lablink.config import InstrumentConfig
 
     defaults = dict(
         alias="test_scope",
@@ -47,16 +47,16 @@ def _make_mock_resource(idn_response: str = "TEKTRONIX,MSO44,C012345,CF:91.1CT F
 
 class TestLoadConfig:
     def test_missing_file_raises_config_error(self, tmp_path):
-        from agentlink.exceptions import ConfigError
-        import agentlink.config as cfg_module
+        from lablink.exceptions import ConfigError
+        import lablink.config as cfg_module
 
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             with pytest.raises(ConfigError, match="No config file found"):
                 cfg_module.load_config("nonexistent")
 
     def test_missing_required_field_raises_config_error(self, tmp_path):
-        from agentlink.exceptions import ConfigError
-        import agentlink.config as cfg_module
+        from lablink.exceptions import ConfigError
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "test_scope"
@@ -74,7 +74,7 @@ write_termination = "\\n"
                 cfg_module.load_config("test_scope")
 
     def test_valid_config_loads(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "test_scope"
@@ -98,7 +98,7 @@ description = "bench scope"
         assert config.description == "bench scope"
 
     def test_plural_document_ids_loads_as_list(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "test_scope"
@@ -118,7 +118,7 @@ techmanual_document_ids = [1291, 1323]
         assert config.techmanual_document_ids == [1291, 1323]
 
     def test_singular_document_id_backward_compat(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "test_scope"
@@ -138,7 +138,7 @@ techmanual_document_id = 142
         assert config.techmanual_document_ids == [142]
 
     def test_no_document_id_defaults_to_empty_list(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "test_scope"
@@ -157,7 +157,7 @@ write_termination = "\\n"
         assert config.techmanual_document_ids == []
 
     def test_list_configs_empty_dir(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             result = cfg_module.list_configs()
@@ -165,7 +165,7 @@ write_termination = "\\n"
         assert result == []
 
     def test_list_configs_returns_valid_entries(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         toml_content = b"""
 alias = "scope_a"
@@ -191,12 +191,12 @@ write_termination = "\\n"
 
 class TestConnect:
     def test_success(self):
-        from agentlink import tools
+        from lablink import tools
         config = _make_config(techmanual_document_ids=[42, 99])
         resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.open_session", return_value=resource):
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.open_session", return_value=resource):
             result = tools.connect("test_scope")
 
         assert result["success"] is True
@@ -205,10 +205,10 @@ class TestConnect:
         assert result["techmanual_document_ids"] == [42, 99]
 
     def test_config_not_found(self):
-        from agentlink import tools
-        from agentlink.exceptions import ConfigError
+        from lablink import tools
+        from lablink.exceptions import ConfigError
 
-        with patch("agentlink.tools.load_config", side_effect=ConfigError("not found")):
+        with patch("lablink.tools.load_config", side_effect=ConfigError("not found")):
             result = tools.connect("missing_alias")
 
         assert result["success"] is False
@@ -217,11 +217,11 @@ class TestConnect:
 
     def test_visa_error_on_open(self):
         import pyvisa
-        from agentlink import tools
+        from lablink import tools
         config = _make_config()
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.open_session", side_effect=pyvisa.Error("timeout")):
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.open_session", side_effect=pyvisa.Error("timeout")):
             result = tools.connect("test_scope")
 
         assert result["success"] is False
@@ -229,9 +229,9 @@ class TestConnect:
         assert "hint" in result
 
     def test_already_connected_returns_error(self):
-        from agentlink import tools
+        from lablink import tools
 
-        with patch("agentlink.tools._session.is_connected", return_value=True):
+        with patch("lablink.tools._session.is_connected", return_value=True):
             result = tools.connect("test_scope")
 
         assert result["success"] is False
@@ -245,19 +245,19 @@ class TestConnect:
 
 class TestDisconnect:
     def test_success(self):
-        from agentlink import tools
+        from lablink import tools
 
-        with patch("agentlink.tools._session.close_session"):
+        with patch("lablink.tools._session.close_session"):
             result = tools.disconnect("test_scope")
 
         assert result["success"] is True
         assert result["alias"] == "test_scope"
 
     def test_no_open_session(self):
-        from agentlink import tools
-        from agentlink.exceptions import SessionError
+        from lablink import tools
+        from lablink.exceptions import SessionError
 
-        with patch("agentlink.tools._session.close_session", side_effect=SessionError("no session")):
+        with patch("lablink.tools._session.close_session", side_effect=SessionError("no session")):
             result = tools.disconnect("test_scope")
 
         assert result["success"] is False
@@ -270,11 +270,11 @@ class TestDisconnect:
 
 class TestQuery:
     def test_success(self):
-        from agentlink import tools
+        from lablink import tools
         resource = MagicMock()
         resource.query.return_value = "1000.00\n"
 
-        with patch("agentlink.tools._session.get_session", return_value=resource):
+        with patch("lablink.tools._session.get_session", return_value=resource):
             result = tools.query("test_scope", "MEAS:FREQ? CH1")
 
         assert result["success"] is True
@@ -282,10 +282,10 @@ class TestQuery:
         assert result["command"] == "MEAS:FREQ? CH1"
 
     def test_no_open_session(self):
-        from agentlink import tools
-        from agentlink.exceptions import SessionError
+        from lablink import tools
+        from lablink.exceptions import SessionError
 
-        with patch("agentlink.tools._session.get_session", side_effect=SessionError("no session")):
+        with patch("lablink.tools._session.get_session", side_effect=SessionError("no session")):
             result = tools.query("test_scope", "MEAS:FREQ? CH1")
 
         assert result["success"] is False
@@ -293,11 +293,11 @@ class TestQuery:
 
     def test_visa_io_error(self):
         import pyvisa
-        from agentlink import tools
+        from lablink import tools
         resource = MagicMock()
         resource.query.side_effect = pyvisa.errors.VisaIOError(0)
 
-        with patch("agentlink.tools._session.get_session", return_value=resource):
+        with patch("lablink.tools._session.get_session", return_value=resource):
             result = tools.query("test_scope", "BAD:COMMAND?")
 
         assert result["success"] is False
@@ -310,10 +310,10 @@ class TestQuery:
 
 class TestWrite:
     def test_success(self):
-        from agentlink import tools
+        from lablink import tools
         resource = MagicMock()
 
-        with patch("agentlink.tools._session.get_session", return_value=resource):
+        with patch("lablink.tools._session.get_session", return_value=resource):
             result = tools.write("test_scope", "CH1:SCALE 0.5")
 
         assert result["success"] is True
@@ -321,10 +321,10 @@ class TestWrite:
         resource.write.assert_called_once_with("CH1:SCALE 0.5")
 
     def test_no_open_session(self):
-        from agentlink import tools
-        from agentlink.exceptions import SessionError
+        from lablink import tools
+        from lablink.exceptions import SessionError
 
-        with patch("agentlink.tools._session.get_session", side_effect=SessionError("no session")):
+        with patch("lablink.tools._session.get_session", side_effect=SessionError("no session")):
             result = tools.write("test_scope", "CH1:SCALE 0.5")
 
         assert result["success"] is False
@@ -332,11 +332,11 @@ class TestWrite:
 
     def test_visa_io_error(self):
         import pyvisa
-        from agentlink import tools
+        from lablink import tools
         resource = MagicMock()
         resource.write.side_effect = pyvisa.errors.VisaIOError(0)
 
-        with patch("agentlink.tools._session.get_session", return_value=resource):
+        with patch("lablink.tools._session.get_session", return_value=resource):
             result = tools.write("test_scope", "CH1:SCALE 0.5")
 
         assert result["success"] is False
@@ -352,17 +352,17 @@ class TestConnectSessionLeak:
         """If *IDN? raises after open_session succeeds, the alias must not
         remain stuck in _sessions."""
         import pyvisa
-        from agentlink import tools
-        from agentlink import session as _session
+        from lablink import tools
+        from lablink import session as _session
 
         config = _make_config()
         resource = MagicMock()
         resource.query.side_effect = pyvisa.Error("timeout")
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.open_session", return_value=resource), \
-             patch("agentlink.tools._session.is_connected", return_value=False), \
-             patch("agentlink.tools._session.close_session") as mock_close:
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.open_session", return_value=resource), \
+             patch("lablink.tools._session.is_connected", return_value=False), \
+             patch("lablink.tools._session.close_session") as mock_close:
             result = tools.connect("test_scope")
 
         assert result["success"] is False
@@ -371,14 +371,14 @@ class TestConnectSessionLeak:
     def test_open_session_failure_does_not_call_close(self):
         """If open_session itself raises, there is nothing to close."""
         import pyvisa
-        from agentlink import tools
+        from lablink import tools
 
         config = _make_config()
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.is_connected", return_value=False), \
-             patch("agentlink.tools._session.open_session", side_effect=pyvisa.Error("no device")), \
-             patch("agentlink.tools._session.close_session") as mock_close:
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.is_connected", return_value=False), \
+             patch("lablink.tools._session.open_session", side_effect=pyvisa.Error("no device")), \
+             patch("lablink.tools._session.close_session") as mock_close:
             result = tools.connect("test_scope")
 
         assert result["success"] is False
@@ -393,13 +393,13 @@ class TestConnectSessionLeak:
 
 class TestInstrumentMemory:
     def test_load_returns_none_when_no_file(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             assert cfg_module.load_instrument_memory("test_scope") is None
 
     def test_load_returns_content_when_file_exists(self, tmp_path):
-        import agentlink.config as cfg_module
+        import lablink.config as cfg_module
 
         memory_content = "# test_scope — Instrument Memory\n\n## cursor\n- `X1?` timeout\n"
         (tmp_path / "test_scope.md").write_text(memory_content, encoding="utf-8")
@@ -410,40 +410,40 @@ class TestInstrumentMemory:
         assert result == memory_content
 
     def test_connect_includes_instrument_memory(self, tmp_path):
-        import agentlink.config as cfg_module
-        from agentlink import tools
+        import lablink.config as cfg_module
+        from lablink import tools
 
         memory_content = "# test_scope — Instrument Memory\n\n## firmware\n- quirk\n"
         (tmp_path / "test_scope.toml").write_bytes(b"")  # not used — load_config mocked
         config = _make_config()
         resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.open_session", return_value=resource), \
-             patch("agentlink.tools.load_instrument_memory", return_value=memory_content):
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.open_session", return_value=resource), \
+             patch("lablink.tools.load_instrument_memory", return_value=memory_content):
             result = tools.connect("test_scope")
 
         assert result["success"] is True
         assert result["instrument_memory"] == memory_content
 
     def test_connect_instrument_memory_null_when_absent(self):
-        from agentlink import tools
+        from lablink import tools
 
         config = _make_config()
         resource = _make_mock_resource("TEKTRONIX,MSO44,C012345,v1.0\n")
 
-        with patch("agentlink.tools.load_config", return_value=config), \
-             patch("agentlink.tools._session.open_session", return_value=resource), \
-             patch("agentlink.tools.load_instrument_memory", return_value=None):
+        with patch("lablink.tools.load_config", return_value=config), \
+             patch("lablink.tools._session.open_session", return_value=resource), \
+             patch("lablink.tools.load_instrument_memory", return_value=None):
             result = tools.connect("test_scope")
 
         assert result["success"] is True
         assert result["instrument_memory"] is None
 
     def test_diagnose_includes_instrument_memory_when_config_ok(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
-        import agentlink.config as cfg_module
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
+        import lablink.config as cfg_module
 
         memory_content = "# scope — Instrument Memory\n\n## recovery\n- power cycle required\n"
         rs = "USB0::0x0699::0x0527::C012345::INSTR"
@@ -455,17 +455,17 @@ class TestInstrumentMemory:
         rm = MagicMock()
         rm.list_resources.return_value = (rs,)
 
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config), \
-             patch("agentlink.diagnostics.load_instrument_memory", return_value=memory_content):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config), \
+             patch("lablink.diagnostics.load_instrument_memory", return_value=memory_content):
             report = diagnostics.run_diagnostics(alias="test_scope")
 
         assert report["alias_check"]["instrument_memory"] == memory_content
 
     def test_diagnose_instrument_memory_null_when_absent(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         rs = "USB0::0x0699::0x0527::C012345::INSTR"
         config = InstrumentConfig(
@@ -476,23 +476,23 @@ class TestInstrumentMemory:
         rm = MagicMock()
         rm.list_resources.return_value = (rs,)
 
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config), \
-             patch("agentlink.diagnostics.load_instrument_memory", return_value=None):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config), \
+             patch("lablink.diagnostics.load_instrument_memory", return_value=None):
             report = diagnostics.run_diagnostics(alias="test_scope")
 
         assert report["alias_check"]["instrument_memory"] is None
 
     def test_diagnose_no_instrument_memory_key_when_config_fails(self, tmp_path):
-        from agentlink import diagnostics
+        from lablink import diagnostics
 
         rm = MagicMock()
         rm.list_resources.return_value = ()
 
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config",
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config",
                    side_effect=ConfigError("not found")):
             report = diagnostics.run_diagnostics(alias="missing")
 
@@ -506,9 +506,9 @@ class TestInstrumentMemory:
 class TestScpiLogger:
     def test_log_event_writes_jsonl_entry(self, tmp_path, monkeypatch):
         import json
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
         # reload get_log_dir to pick up the new env value
         scpi_logger.log_event(op="query", alias="test_scope", command="*IDN?", response="ACME", success=True)
 
@@ -527,9 +527,9 @@ class TestScpiLogger:
 
     def test_multiple_events_append_to_same_file(self, tmp_path, monkeypatch):
         import json
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
         scpi_logger.log_event(op="connect", alias="scope", success=True, idn="ACME,X1,SN,v1")
         scpi_logger.log_event(op="query", alias="scope", command="FREQ?", response="1000", success=True)
         scpi_logger.log_event(op="write", alias="scope", command="TDIV 1E-3", success=True)
@@ -542,18 +542,18 @@ class TestScpiLogger:
         assert ops == ["connect", "query", "write"]
 
     def test_logging_disabled_when_env_empty(self, tmp_path, monkeypatch):
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", "")
+        monkeypatch.setenv("LABLINK_LOG_DIR", "")
         scpi_logger.log_event(op="query", alias="scope", command="*IDN?", success=True)
 
         assert list(tmp_path.glob("*.jsonl")) == []
 
     def test_error_entry_has_error_field(self, tmp_path, monkeypatch):
         import json
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
         scpi_logger.log_event(op="query", alias="scope", command="BAD?", success=False, error="VISA I/O error: timeout")
 
         lines = list(tmp_path.glob("*.jsonl"))[0].read_text().strip().splitlines()
@@ -562,29 +562,29 @@ class TestScpiLogger:
         assert "timeout" in entry["error"]
 
     def test_log_event_never_raises_on_bad_dir(self, monkeypatch):
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", "/nonexistent/readonly/path/xyz")
+        monkeypatch.setenv("LABLINK_LOG_DIR", "/nonexistent/readonly/path/xyz")
         # Should not raise even if mkdir fails (on systems where this path is unwritable)
         scpi_logger.log_event(op="write", alias="scope", command="TDIV 1E-3", success=True)
 
     def test_get_log_dir_returns_default_when_unset(self, monkeypatch):
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
         from pathlib import Path
 
-        monkeypatch.delenv("AGENTLINK_LOG_DIR", raising=False)
-        assert scpi_logger.get_log_dir() == Path.home() / ".agentlink" / "logs"
+        monkeypatch.delenv("LABLINK_LOG_DIR", raising=False)
+        assert scpi_logger.get_log_dir() == Path.home() / ".lablink" / "logs"
 
     def test_get_log_dir_returns_none_when_empty(self, monkeypatch):
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", "")
+        monkeypatch.setenv("LABLINK_LOG_DIR", "")
         assert scpi_logger.get_log_dir() is None
 
     def test_get_log_dir_returns_override_path(self, tmp_path, monkeypatch):
-        from agentlink import scpi_logger
+        from lablink import scpi_logger
 
-        monkeypatch.setenv("AGENTLINK_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
         assert scpi_logger.get_log_dir() == tmp_path
 
 
@@ -599,10 +599,10 @@ class TestDiagnostics:
         return rm
 
     def test_basic_report_structure(self):
-        from agentlink import diagnostics
+        from lablink import diagnostics
 
         rm = self._mock_rm()
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm):
             report = diagnostics.run_diagnostics()
 
         assert "system" in report
@@ -615,30 +615,30 @@ class TestDiagnostics:
         assert "alias_check" not in report
 
     def test_no_resources_adds_action_item(self):
-        from agentlink import diagnostics
+        from lablink import diagnostics
 
         rm = self._mock_rm(resources=())
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm):
             report = diagnostics.run_diagnostics()
 
         assert not report["ready"]
         assert any("No VISA resources" in item for item in report["action_items"])
 
     def test_resource_manager_failure_adds_action_item(self):
-        from agentlink import diagnostics
+        from lablink import diagnostics
         import pyvisa
 
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", side_effect=pyvisa.Error("backend missing")):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", side_effect=pyvisa.Error("backend missing")):
             report = diagnostics.run_diagnostics()
 
         assert not report["visa"]["resource_manager_ok"]
         assert any("ResourceManager" in item for item in report["action_items"])
 
     def test_usb_resource_categorised(self):
-        from agentlink import diagnostics
+        from lablink import diagnostics
 
         rm = self._mock_rm(resources=("USB0::0x0699::0x1::C1::INSTR",))
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm):
             report = diagnostics.run_diagnostics()
 
         assert len(report["interfaces"]["usb"]["resources"]) == 1
@@ -646,14 +646,14 @@ class TestDiagnostics:
         assert report["interfaces"]["lan"]["resources"] == []
 
     def test_alias_check_config_missing(self, tmp_path):
-        from agentlink import diagnostics
-        import agentlink.config as cfg_module
+        from lablink import diagnostics
+        import lablink.config as cfg_module
 
         rm = self._mock_rm()
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
              patch.object(cfg_module, "get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", side_effect=ConfigError("not found")):
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", side_effect=ConfigError("not found")):
             report = diagnostics.run_diagnostics(alias="missing")
 
         assert "alias_check" in report
@@ -661,8 +661,8 @@ class TestDiagnostics:
         assert any("Config for" in item for item in report["action_items"])
 
     def test_alias_check_usb_in_list(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         rs = "USB0::0x0699::0x0527::C012345::INSTR"
         config = InstrumentConfig(
@@ -671,9 +671,9 @@ class TestDiagnostics:
             timeout_ms=5000, read_termination="\n", write_termination="\n",
         )
         rm = self._mock_rm(resources=(rs,))
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config):
             report = diagnostics.run_diagnostics(alias="test_scope")
 
         assert report["alias_check"]["config_ok"]
@@ -681,8 +681,8 @@ class TestDiagnostics:
         assert report["alias_check"]["in_visa_list"] is True
 
     def test_alias_check_usb_not_in_list_adds_action(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         config = InstrumentConfig(
             alias="test_scope",
@@ -691,17 +691,17 @@ class TestDiagnostics:
             timeout_ms=5000, read_termination="\n", write_termination="\n",
         )
         rm = self._mock_rm(resources=())
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config):
             report = diagnostics.run_diagnostics(alias="test_scope")
 
         assert report["alias_check"]["in_visa_list"] is False
         assert any("USB resource" in item for item in report["action_items"])
 
     def test_alias_check_tcpip_ping_ok_port_closed(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         config = InstrumentConfig(
             alias="lan_scope",
@@ -710,11 +710,11 @@ class TestDiagnostics:
             timeout_ms=5000, read_termination="\n", write_termination="\n",
         )
         rm = self._mock_rm(resources=())
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config), \
-             patch("agentlink.diagnostics._ping", return_value=True), \
-             patch("agentlink.diagnostics._port_open", return_value=False):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config), \
+             patch("lablink.diagnostics._ping", return_value=True), \
+             patch("lablink.diagnostics._port_open", return_value=False):
             report = diagnostics.run_diagnostics(alias="lan_scope")
 
         assert report["alias_check"]["tcpip_host"] == "192.168.1.100"
@@ -723,8 +723,8 @@ class TestDiagnostics:
         assert any("port 5025" in item for item in report["action_items"])
 
     def test_alias_check_tcpip_no_ping(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         config = InstrumentConfig(
             alias="lan_scope",
@@ -733,19 +733,19 @@ class TestDiagnostics:
             timeout_ms=5000, read_termination="\n", write_termination="\n",
         )
         rm = self._mock_rm(resources=())
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config), \
-             patch("agentlink.diagnostics._ping", return_value=False), \
-             patch("agentlink.diagnostics._port_open", return_value=False):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config), \
+             patch("lablink.diagnostics._ping", return_value=False), \
+             patch("lablink.diagnostics._port_open", return_value=False):
             report = diagnostics.run_diagnostics(alias="lan_scope")
 
         assert report["alias_check"]["ping_ok"] is False
         assert any("ping" in item.lower() for item in report["action_items"])
 
     def test_ready_true_when_no_issues(self, tmp_path):
-        from agentlink import diagnostics
-        from agentlink.config import InstrumentConfig
+        from lablink import diagnostics
+        from lablink.config import InstrumentConfig
 
         rs = "USB0::0x0699::0x0527::C012345::INSTR"
         config = InstrumentConfig(
@@ -756,9 +756,9 @@ class TestDiagnostics:
         toml_file = tmp_path / "test_scope.toml"
         toml_file.write_text("")  # just needs to exist for the count
         rm = self._mock_rm(resources=(rs,))
-        with patch("agentlink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
-             patch("agentlink.diagnostics.get_config_dir", return_value=tmp_path), \
-             patch("agentlink.diagnostics.load_config", return_value=config):
+        with patch("lablink.diagnostics.pyvisa.ResourceManager", return_value=rm), \
+             patch("lablink.diagnostics.get_config_dir", return_value=tmp_path), \
+             patch("lablink.diagnostics.load_config", return_value=config):
             report = diagnostics.run_diagnostics(alias="test_scope")
 
         assert report["ready"] is True
