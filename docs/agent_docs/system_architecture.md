@@ -1,163 +1,248 @@
 # System Architecture
 
-## 1. High-Level Overview
+This document describes both the **current shipped architecture** (agentlink-visa, single-driver) and the **LabLink target architecture** (multi-driver) that Phase 0 migration is moving toward. They differ significantly. For most design questions, defer to `docs/lablink_plan.md` — it is the authoritative spec for the target.
 
-AgentLink-Visa is a local-first Python application. It runs on the user's machine and provides two interfaces to the same core instrument control logic: an MCP server (primary, for AI agents) and a CLI (secondary, for development and debugging).
+---
 
-**Core Stack:**
+## 0. Two Architectures, One Document
+
+| | Current (on disk now) | Target (post Phase 0) |
+|---|---|---|
+| Package name | `agentlink` | `lablink` |
+| Repo / PyPI | `agentlink-visa` | `lablink-mcp` |
+| Config dir | `~/.agentlink/instruments/` | `~/.lablink/devices/` |
+| Drivers | VISA only | VISA, SSH, REST, serial, python_shell |
+| Tool surface | `connect`, `disconnect`, `query`, `write`, `diagnose_connection` (VISA-specific) | `connect`, `disconnect`, `list_devices`, `diagnose` (shared) + per-driver tools (`visa_query`, `ssh_exec`, ...) |
+| Tool dispatch | Direct (single driver) | Shared lifecycle dispatches via `DRIVER_REGISTRY[type]`; per-driver tools self-register |
+| Config schema | Single TOML shape, no `type` field | Per-driver schemas resolved via `DRIVER_CONFIG_REGISTRY[type]` |
+| Session model | `_sessions: dict[str, pyvisa.Resource]` | `_sessions: dict[str, Session[ConfigT]]` |
+
+Sections 1–4 describe **target** architecture (post-pivot). Section 5 documents the **current** layout for agents working in the pre-migration codebase.
+
+---
+
+## 1. High-Level Overview (Target)
+
+LabLink MCP is a local-first Python application. It provides two interfaces to the same per-driver core: an MCP server (primary, for AI agents) and a CLI (secondary, for development and debugging).
+
+**Core stack:**
 - **Runtime:** Python 3.10+
-- **MCP Framework:** FastMCP (stdio transport)
-- **VISA Interface:** pyvisa + pyvisa-py (pure-Python backend)
-- **Config Format:** TOML (tomllib / tomli)
+- **MCP framework:** FastMCP (stdio transport)
+- **Drivers:** PyVISA (VISA), Paramiko (SSH), httpx (REST), pyserial (serial), stdlib subprocess (python_shell)
+- **Config format:** TOML (tomllib / tomli)
 - **CLI:** Click
-- **Package Manager:** uv
+- **Package manager:** uv
 
 ---
 
 ## 2. Directory Structure (Target)
 
 ```text
-agentlink-visa/
+lablink-mcp/
 ├── docs/
+│   ├── lablink_plan.md              # authoritative architectural plan
 │   └── agent_docs/
-│       ├── readme_agent.md         # Agent onboarding protocol
-│       ├── project_goal.md         # Vision, design decisions, non-goals
-│       ├── agent_development.md    # Coding standards, dev guidelines
-│       ├── current_status.md       # Current phase + recent history
-│       └── system_architecture.md  # This file
-├── agentlink/
+│       ├── readme_agent.md
+│       ├── project_goal.md
+│       ├── agent_development.md
+│       ├── current_status.md
+│       └── system_architecture.md   # this file
+├── lablink/
 │   ├── __init__.py
-│   ├── config.py                   # Config loader: reads <alias>.toml, validates required fields
-│   ├── session.py                  # VISA session lifecycle: open, close, module-level session dict
-│   ├── tools.py                    # MCP tool implementations (connect, disconnect, query, write)
-│   ├── diagnostics.py              # Connection diagnostics: deps, VISA backend, resource discovery, reachability
-│   ├── scpi_logger.py              # SCPI transaction logger: JSONL log per day to ~/.agentlink/logs/
-│   └── exceptions.py               # Typed exceptions (ConfigError, SessionError)
-├── mcp_server.py                   # FastMCP entrypoint (stdio)
-├── cli.py                          # Click CLI entrypoint
+│   ├── base.py                      # ABC, all data models, Session[ConfigT], shared helpers
+│   ├── config.py                    # Base config loader; uses DRIVER_CONFIG_REGISTRY
+│   ├── session.py                   # _sessions dict, register/deregister/get helpers
+│   ├── event_logger.py              # Generalized from scpi_logger.py; logs all tool events
+│   ├── exceptions.py                # ConfigError, SessionError, DriverError
+│   └── interfaces/
+│       ├── __init__.py              # DRIVER_REGISTRY, DRIVER_CONFIG_REGISTRY
+│       ├── visa/                    # driver.py + config.py per driver
+│       ├── ssh/
+│       ├── rest/
+│       ├── serial/
+│       └── python_shell/
+├── mcp_server.py                    # FastMCP entrypoint; registers shared tools + dispatches driver.register_tools()
+├── cli.py                           # Click root; dispatches to driver.register_cli_commands()
 ├── tests/
-│   └── test_tools.py               # Unit tests (mocked pyvisa)
-├── examples/
-│   └── instruments/                # Example .toml configs for common instruments
+│   ├── conftest.py
+│   ├── test_shared_tools.py
+│   ├── test_dispatch.py
+│   └── interfaces/                  # one test file per driver
+├── examples/configs/                # one example .toml per driver
 ├── pyproject.toml
-├── requirements.txt
-├── .env.example
-├── agent-bootstrap.md              # Founding context document
 └── README.md
 ```
 
----
+There is no `lablink/tools.py`. Shared lifecycle tools live in `mcp_server.py`. Per-driver operation tools live inside each `lablink/interfaces/<type>/driver.py` and self-register via `register_tools(mcp)`.
 
-## 3. Core Components
-
-### A. Config Loader (`agentlink/config.py`)
-- Reads `~/.agentlink/instruments/<alias>.toml` (or `$AGENTLINK_CONFIG_DIR/<alias>.toml`).
-- Validates required fields at load time; raises `ConfigError` with a clear message on missing fields.
-- Returns a typed config dataclass used by session and tool modules.
-- The `techmanual_document_ids` field (list of ints) is passed through to MCP tool responses to enable agent-directed manual lookups. Legacy single-int `techmanual_document_id` is auto-converted to a one-element list on load.
-- `load_instrument_memory(alias)` reads `<config_dir>/<alias>.md` and returns its content, or `None` if the file does not exist. Never raises.
-
-### B. Session Manager (`agentlink/session.py`)
-- Maintains a module-level dict of open VISA sessions keyed by alias: `_sessions: dict[str, pyvisa.Resource]`.
-- `open_session(config)` — calls `pyvisa.ResourceManager().open_resource()` with the configured resource string and timeout. Registers the resource in `_sessions`.
-- `close_session(alias)` — closes the resource and removes it from `_sessions`.
-- `get_session(alias)` — returns the open resource or raises `SessionError` if none exists.
-- pyvisa backend defaults to `pyvisa-py`. Users with NI-VISA installed can override via `AGENTLINK_VISA_BACKEND` env var or `~/.agentlink/visa.toml`.
-
-### C. MCP Tools (`agentlink/tools.py`)
-Implements the four v0.1 tools. All call into `config.py` and `session.py`; none interact with pyvisa directly.
-
-| Tool | Behavior |
-|------|----------|
-| `connect(alias)` | Load config → open session → send `*IDN?` → return instrument info dict including `instrument_memory`. On IDN failure, cleans up the orphaned session before returning error. |
-| `disconnect(alias)` | Close session → return success dict |
-| `query(alias, command)` | Get session → `resource.query(command)` → return response string |
-| `write(alias, command)` | Get session → `resource.write(command)` → return success dict |
-
-All tools catch `pyvisa` exceptions and return structured error dicts (`{"success": false, "error": "...", "hint": "..."}`) rather than raising.
-
-### D. Diagnostics (`agentlink/diagnostics.py`)
-`run_diagnostics(alias=None)` — checks installed dependencies, VISA backend health, detected resources by interface type (USB/GPIB/TCPIP/serial), config directory status, and (when alias is provided) alias-specific reachability: USB presence in resource list, TCPIP ping + port 5025 check, GPIB adapter detection. Returns a structured dict with `ready: bool` and `action_items: list[str]` of concrete user-facing steps. Exposed as the `diagnose_connection` MCP tool and `agentlink diagnose [alias]` CLI command.
-
-### E. SCPI Logger (`agentlink/scpi_logger.py`)
-- `get_log_dir()` — returns the active log directory (`Path`) or `None` if logging is disabled.
-- `log_event(**fields)` — appends one JSONL entry to `<log_dir>/YYYY-MM-DD.jsonl`. Prepends a `ts` (UTC ISO timestamp). Silently no-ops on any filesystem error — logging must never affect instrument control.
-- Called by `tools.py` at every success and failure return point for all four tools.
-- Default log dir: `~/.agentlink/logs/`. Override: `AGENTLINK_LOG_DIR` env var. Disable: set `AGENTLINK_LOG_DIR` to empty string.
-
-### F. MCP Server (`mcp_server.py`)
-- FastMCP entrypoint over stdio.
-- Registers the five tools (connect, disconnect, query, write, diagnose_connection).
-- `_INSTRUCTIONS` includes interface-setup guidance, troubleshooting steps, and a VISA/SCPI behavior section surfaced to every agent session.
-- Entry point: `uv run mcp_server.py` or configured in `.mcp.json`.
-
-### G. CLI (`cli.py`)
-- Click group with four subcommands: `connect`, `query`, `write`, `list`.
-- Thin wrappers over the same core functions used by MCP tools.
-- Diagnostic output to stderr; command output to stdout.
-- Intended for development, debugging, and instrument config validation — not for production agent use.
-
-### H. Exceptions (`agentlink/exceptions.py`)
-- `ConfigError` — raised on invalid or missing config fields.
-- `SessionError` — raised when a tool is called for an alias with no open session.
+For the full target directory layout including stubs of every file, see `lablink_plan.md` §7.
 
 ---
 
-## 4. Data Flow
+## 3. Core Components (Target)
 
-### Agent Control Loop (MCP)
+### A. Base Module (`lablink/base.py`)
+Houses all type definitions and the driver ABC. Specifically:
+
+- **Data models:** `Result`, `ReadResult`, `ConnectResult`, `DiagnosticResult`, `SystemDepStatus`
+- **Config types:** `DriverConfig` (base), `AuthConfig` (mixin for SSH/REST), `DocumentedConfig` (mixin for VISA — carries `techmanual_document_ids`)
+- **Session:** `Session[ConfigT]` (Generic over the driver's config subclass)
+- **Driver ABC:** `LabLinkDriver[ConfigT]` — abstract methods `connect`, `disconnect`, `diagnose`, `register_tools`; classmethods `check_python_deps`, `system_dep_check`
+- **Shared helpers:** `session_registry.get(alias, expected_type=...)`, tool-error wrappers, event-logging shortcuts
+
+Field shapes and ABC method contracts are documented in `lablink_plan.md` §3 and §4.
+
+### B. Config Loader (`lablink/config.py`)
+- Reads `~/.lablink/devices/<alias>.toml` (or `$LABLINK_CONFIG_DIR/<alias>.toml`).
+- Reads the `type` field; looks up `DRIVER_CONFIG_REGISTRY[type]`; instantiates the driver-specific config subclass with all TOML fields.
+- Raises `ConfigError` on unknown `type` with a message listing valid types.
+- Calls `Path(value).expanduser()` on every path field at load time (TOML does not auto-expand tildes).
+- Implements Phase 0a auto-migration: on first load, if `~/.lablink/devices/` does not exist and `~/.agentlink/instruments/` does, copies `.toml` and `.md` files and injects `type = "visa"` into any TOML lacking it. Disabled by setting `LABLINK_AUTO_MIGRATE=0`.
+- `load_device_memory(alias)` reads `<config_dir>/<alias>.md` and returns content or `None`. Never raises.
+
+### C. Session Manager (`lablink/session.py`)
+- Module-level `_sessions: dict[str, Session]`.
+- `register(session)` adds, `deregister(alias)` removes, `get(alias, expected_type=None)` looks up with optional type check.
+- The driver's `connect()` constructs the `Session` and calls `register()`. The shared `disconnect()` tool calls `deregister()` after the driver's `disconnect()` returns, regardless of return value.
+- Per-driver tools call `get(alias, expected_type=cls.type_name)` — returns `None` on missing session or type mismatch, defending against agent-typing bugs.
+
+### D. Driver Implementations (`lablink/interfaces/<type>/`)
+Each driver lives in its own subpackage with:
+- `driver.py` — subclass of `LabLinkDriver[<ConfigT>]`. Implements `connect`, `disconnect`, `diagnose`, `register_tools`, and (where applicable) `register_cli_commands`. Lazy-imports the third-party dep inside `connect()`.
+- `config.py` — driver-specific `DriverConfig` subclass. Inherits `AuthConfig` if the driver needs auth, `DocumentedConfig` if it targets devices with manuals on techmanual.ai.
+
+Per-driver tool surface and behavior is defined in `lablink_plan.md` §9 (one subsection per driver).
+
+### E. MCP Server (`mcp_server.py`)
+FastMCP stdio entrypoint. Startup flow:
+1. Instantiate FastMCP server.
+2. Register shared lifecycle tools: `connect`, `disconnect`, `list_devices`, `diagnose`. These tools dispatch via `DRIVER_REGISTRY[config.type]` or `DRIVER_REGISTRY[session.interface_type]`.
+3. For each driver in `DRIVER_REGISTRY`, call `check_python_deps()`. If all deps present, instantiate and call `driver.register_tools(mcp)`. If any missing, skip registration and log a stderr notice with the install hint.
+4. Start the stdio loop.
+
+The `_INSTRUCTIONS` constant gives the agent a multi-driver architecture overview, points to per-driver tool docstrings for protocol-specific semantics, and tells the agent to call `diagnose()` to see which drivers are available.
+
+### F. CLI (`cli.py`)
+Click root group. Shared subcommands (`lablink connect`, `lablink disconnect`, `lablink list`, `lablink diagnose`) always present. Per-driver subgroups (`lablink visa ...`, `lablink ssh ...`, etc.) registered via `driver.register_cli_commands(group)` using the same dep-presence logic as the MCP server.
+
+### G. Event Logger (`lablink/event_logger.py`)
+JSONL transaction log, one file per UTC day at `~/.lablink/logs/YYYY-MM-DD.jsonl`. Called by every tool at every success and failure return point. Generalized from agentlink-visa's `scpi_logger.py` — the `op` field is now any tool name, not just `connect`/`query`/`write`/`disconnect`. Disable by setting `LABLINK_LOG_DIR=""`.
+
+### H. Exceptions (`lablink/exceptions.py`)
+- `ConfigError` — invalid or missing config fields, unknown `type`.
+- `SessionError` — alias not registered (raised internally; tools convert to structured error dicts).
+- `DriverError` — driver-internal failures that don't fit the standard structured-error pattern.
+
+---
+
+## 4. Data Flow (Target)
+
+### Agent control loop (MCP)
 ```
 Agent (Claude)
-  → connect("tek_mso44")
-      → config.py: load ~/.agentlink/instruments/tek_mso44.toml
-      → session.py: ResourceManager().open_resource(resource_string)
-      → tools.py: resource.query("*IDN?")
-      ← {"success": true, "alias": "tek_mso44", "idn": "...", "techmanual_document_id": 142}
+  → connect("bench_scope")
+      → mcp_server.connect: load config (type="visa") → DRIVER_REGISTRY["visa"] → VisaDriver().connect(config)
+      → VisaDriver.connect: lazy import pyvisa, open resource, send *IDN?, build Session, register
+      ← ConnectResult(success=true, alias="bench_scope", interface_type="visa", identity="...",
+                       device_memory="...", techmanual_document_ids=[1291, 1323])
 
-  → query("tek_mso44", "MEAS:FREQ? CH1")
-      → session.py: get_session("tek_mso44")
-      → resource.query("MEAS:FREQ? CH1")
-      ← {"success": true, "response": "1000.00"}
+  → visa_query("bench_scope", "MEAS:FREQ? CH1")
+      → VisaDriver.visa_query (registered as @mcp.tool): session_registry.get("bench_scope", expected_type="visa")
+      → session.raw.query("MEAS:FREQ? CH1")
+      → event_logger.log_event(op="visa_query", ...)
+      ← ReadResult(success=true, raw="1000.00", format="text")
 
-  → disconnect("tek_mso44")
-      → session.py: resource.close(), remove from _sessions
-      ← {"success": true}
+  → ssh_exec("lab_pi", "uname -a")
+      → SshDriver.ssh_exec: session_registry.get("lab_pi", expected_type="ssh")
+      → session.raw.exec_command("uname -a")
+      ← ReadResult(success=true, raw="Linux...", metadata={"exit_code": 0, "stderr": ""})
+
+  → disconnect("bench_scope")
+      → mcp_server.disconnect: session_registry.get → VisaDriver.disconnect → session_registry.deregister
+      ← Result(success=true)
 ```
 
-### CLI Debug Loop
+### Diagnose (no alias) — system audit
 ```
-$ agentlink connect tek_mso44
-  → same config + session path as MCP connect()
-  → prints IDN response to stdout
+Agent → diagnose()
+  → mcp_server.diagnose: iterate DRIVER_REGISTRY
+       → for each driver:
+            check_python_deps() via importlib.util.find_spec (no side effects)
+            if all present, system_dep_check() for OS-level deps
+       → build DiagnosticResult with action_items ordered most-blocking-first
+  ← DiagnosticResult(ready=true|false, drivers={visa: {...}, ssh: {...}, ...}, action_items=[...])
+```
 
-$ agentlink query tek_mso44 "MEAS:FREQ? CH1"
-  → prints query response to stdout
+### CLI debug loop
 ```
+$ lablink connect bench_scope
+  → same dispatch path as MCP connect; prints ConnectResult as JSON
 
-### Instrument Config Discovery
-```
-$ agentlink list
-  → scans ~/.agentlink/instruments/*.toml
-  → prints alias, manufacturer, model_number, resource_string for each
+$ lablink visa query bench_scope "MEAS:FREQ? CH1"
+  → same dispatch path as MCP visa_query
 ```
 
 ---
 
-## 5. Configuration
+## 5. Current (Pre-Pivot) Architecture
 
-### Instrument Config (`~/.agentlink/instruments/<alias>.toml`)
-One file per instrument. Required and optional fields documented in `project_goal.md` §2.3. Alias convention: `<manufacturer>_<model>` lowercase with underscores.
+The current on-disk codebase still reflects the original agentlink-visa design. This section documents what's there now and where each piece moves in Phase 0.
 
-### Instrument Memory (`~/.agentlink/instruments/<alias>.md`)
-Optional. Agent-maintained Markdown file of device-specific quirks and workarounds. Created and appended by agents when they encounter non-obvious device issues. Returned as `instrument_memory` in `connect()` and `diagnose_connection()` (alias_check) responses. Format: `## category` headers with one-line bullet entries per quirk.
+### Current directory
+```text
+agentlink/
+├── __init__.py
+├── config.py                       # → lablink/config.py (extended with DRIVER_CONFIG_REGISTRY)
+├── session.py                      # → lablink/session.py (extended with expected_type lookup)
+├── tools.py                        # → split: shared tools to mcp_server.py; VISA tools to lablink/interfaces/visa/driver.py
+├── diagnostics.py                  # → folded into VisaDriver.diagnose() + mcp_server.diagnose() system audit
+├── scpi_logger.py                  # → renamed lablink/event_logger.py
+└── exceptions.py                   # → lablink/exceptions.py (adds DriverError)
+mcp_server.py                       # → rewritten for shared + per-driver registration
+cli.py                              # → rewritten for shared + per-driver subgroups
+```
 
-### VISA Backend (`~/.agentlink/visa.toml` or `AGENTLINK_VISA_BACKEND` env var)
-Optional. Overrides the default pyvisa-py backend. Document both setup paths in the README — this is the #1 setup friction point.
+### Current tool surface
+- `connect(alias)` — VISA-specific; returns `instrument_memory`, `techmanual_document_ids`
+- `disconnect(alias)`
+- `query(alias, command)` — SCPI query
+- `write(alias, command)` — SCPI write
+- `diagnose_connection(alias=None)` — diagnostics
+
+### Migration mapping
+| Current | Target |
+|---|---|
+| `agentlink.tools.connect` | `mcp_server.connect` (shared dispatch) |
+| `agentlink.tools.query` | `VisaDriver.visa_query` (per-driver) |
+| `agentlink.tools.write` | `VisaDriver.visa_write` (per-driver) |
+| `agentlink.tools.disconnect` | `mcp_server.disconnect` (shared dispatch) |
+| `agentlink.tools.diagnose_connection` | `mcp_server.diagnose` (shared) + `VisaDriver.diagnose` (per-alias path) |
+| `agentlink.diagnostics.run_diagnostics` | folded into the two methods above |
+| `agentlink.config.InstrumentConfig` | `VisaDriverConfig(DriverConfig, DocumentedConfig)` in `lablink/interfaces/visa/config.py` |
+| `agentlink.config.load_instrument_memory` | `lablink.config.load_device_memory` (renamed) |
+| `agentlink.scpi_logger.log_event` | `lablink.event_logger.log_event` (generalized op field) |
+| `instrument_memory` (ConnectResult field) | `device_memory` (renamed) |
+
+---
+
+## 6. Configuration
+
+### Device config (`~/.lablink/devices/<alias>.toml`)
+One file per device. Every config has a `type` field that selects the driver. Required and optional fields per driver are documented in `lablink_plan.md` §5. Alias convention: `<vendor>_<model>` (T&M) or `<role>_<host>` (compute), lowercase with underscores.
+
+### Device memory (`~/.lablink/devices/<alias>.md`)
+Optional. Agent-maintained Markdown file of device-specific quirks and workarounds. Created and appended by agents when they encounter non-obvious device issues. Returned as `device_memory` in `connect()` and `diagnose(alias)` responses. Format: `## category` headers with one-line bullet entries per quirk.
+
+### VISA backend (`~/.lablink/visa.toml` or `LABLINK_VISA_BACKEND` env var)
+Optional. Overrides the default `pyvisa-py` backend. Document both setup paths in the README — this is the #1 setup friction point for the VISA driver.
 
 ### Environment Variables
 | Variable | Purpose |
 |----------|---------|
-| `AGENTLINK_CONFIG_DIR` | Override instrument config directory (default: `~/.agentlink/instruments/`) |
-| `AGENTLINK_VISA_BACKEND` | Override pyvisa backend (default: `@py` for pyvisa-py) |
-| `AGENTLINK_LOG_DIR` | Override SCPI log directory (default: `~/.agentlink/logs/`); set to empty string to disable logging |
-| `TMAI_API_KEY` | techmanual.ai API key for agent-directed manual lookups |
+| `LABLINK_CONFIG_DIR` | Override device config directory (default: `~/.lablink/devices/`) |
+| `LABLINK_VISA_BACKEND` | Override pyvisa backend (default: `@py` for pyvisa-py) |
+| `LABLINK_LOG_DIR` | Override event log directory (default: `~/.lablink/logs/`); empty string disables logging |
+| `LABLINK_AUTO_MIGRATE` | Set to `0` to disable Phase 0a auto-migration from `~/.agentlink/instruments/` |
+| `TMAI_API_KEY` | techmanual.ai API key for agent-directed manual lookups (optional) |
+
+The legacy `AGENTLINK_*` env vars are accepted as fallbacks during the transition period and will be removed after Phase 1 ships.
