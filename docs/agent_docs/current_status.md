@@ -1,44 +1,64 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 0a Complete — Ready for Phase 0b (Architectural Core)**
+**LabLink Phase 0b Complete — Ready for Phase 0c (Peripheral Cleanup)**
 
-Phase 0a landed: the package, CLI command, MCP entry point, env vars, and
-config paths are all renamed from `agentlink-visa` → `lablink-mcp`, and
-auto-migration of legacy `~/.agentlink/instruments/` configs into
-`~/.lablink/devices/` runs on first invocation. The v0.1 tool surface
-(`connect_instrument`, `query_instrument`, etc.) is unchanged in behavior —
-only string-level renames in this phase. 58/58 tests pass (47 original +
-11 new migration tests).
+Phase 0b landed the architectural core. The single-driver VISA implementation
+is now a multi-driver dispatch system:
+- `lablink/base.py` — all data models (`Result`, `ReadResult`, `ConnectResult`,
+  `DiagnosticResult`, `SystemDepStatus`), config dataclasses (`DriverConfig` +
+  `AuthConfig`/`DocumentedConfig` mixins, all `kw_only=True`),
+  `Session[ConfigT]`, and the `LabLinkDriver[ConfigT]` ABC.
+- VISA refactored into `lablink/interfaces/visa/` (driver + config) on the ABC;
+  it self-registers `visa_query` / `visa_write` via `register_tools(mcp)`.
+- Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
+  live in `mcp_server.py` and dispatch via `DRIVER_REGISTRY` /
+  `DRIVER_CONFIG_REGISTRY`. No protocol-specific logic remains in the server.
+- `lablink/tools.py` and `lablink/diagnostics.py` deleted (folded in).
 
-**Authoritative architectural spec:** `docs/lablink_plan.md`. The
-per-task implementation log is `docs/agent_docs/implementation_log.md`.
+**71/71 tests pass** (was 58). Tool surface verified: 4 shared + 2 VISA.
 
-**Next phase: 0b — Architectural Core.** Driver ABC, data models, VISA
-driver refactor onto the ABC, dispatch via `DRIVER_REGISTRY`. See
-`lablink_plan.md` §9 Phase 0b. Phase 0b has a stop-the-line FastMCP
-smoke test as Task 0 — write that before any other 0b work.
+**Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
+implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Outstanding pre-0b work:** The Phase 0b exit gate requires a pre-rename
-baseline of `agentlink connect <local_instrument>` output for the
-behavioral-equivalence diff. This was deferred in 0a (Siglent scope was
-offline). See `implementation_log.md` for the recommended capture path
-before 0b ships.
+**Next phase: 0c — Peripheral Cleanup.** `scpi_logger` → `event_logger`
+(+ §6.4 field contract); CLI subgroup rewrite (`lablink visa query`, dropping
+flat `query`/`write` — `VisaDriver.register_cli_commands` is already
+implemented and ready to wire); `_INSTRUCTIONS` multi-driver rewrite with the
+runtime driver-count paragraph; `examples/devices/` → `examples/configs/`;
+archive `agent-bootstrap.md` and old current_status history. See
+`lablink_plan.md` §9 Phase 0c.
+
+**Outstanding (carried into the 0b exit gate, still open):** the
+behavioral-equivalence diff against a pre-Phase-0a `agentlink connect` baseline
+is **not closeable** — the baseline was never captured (Siglent offline in 0a)
+and the old `agentlink` entry point is gone. It is hardware-gated; structural
+equivalence is argued in code review. Capture via Option 1 (checkout pre-0a
+commit + scope) when the Siglent is next available. See `implementation_log.md`.
 
 ---
 
 ## What Exists On Disk Right Now
 
-- `lablink/` package (single-driver VISA implementation, renamed from `agentlink/`) — works, 58/58 tests pass
-- `mcp_server.py`, `cli.py` — `lablink-mcp` / `lablink` entrypoints
-- `~/.lablink/devices/<alias>.toml` is the new config location; legacy
-  `~/.agentlink/instruments/` is auto-migrated on first run
-- `examples/devices/example_scope.toml` (renamed from `examples/instruments/`)
-- `CHANGELOG.md` documenting the rename and auto-migration
-- `agent-bootstrap.md` at repo root — original agentlink-visa founding document; will be archived in Phase 0c
-- `docs/lablink_plan.md` — authoritative architectural plan
-- `docs/agent_docs/` — onboarding docs + `implementation_log.md` (per-task
-  progress log for the plan)
+- `lablink/base.py` — data models, config dataclasses, `Session[ConfigT]`, the
+  `LabLinkDriver` ABC
+- `lablink/session.py` — protocol-agnostic session registry (three-state lookup)
+- `lablink/config.py` — generic loader via `DRIVER_CONFIG_REGISTRY`; auto-migration
+- `lablink/interfaces/__init__.py` — `DRIVER_REGISTRY` + `DRIVER_CONFIG_REGISTRY`
+- `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig` (only v1 driver so far)
+- `lablink/scpi_logger.py` — event log (renamed to `event_logger` in 0c)
+- `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
+- `cli.py` — flat CLI (subgroup rewrite is 0c); `lablink`
+- `~/.lablink/devices/<alias>.toml` config location; legacy
+  `~/.agentlink/instruments/` auto-migrated on first run
+- `examples/devices/example_scope.toml` (now carries `type = "visa"`)
+- `tests/` — `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
+  `test_fastmcp_late_registration`, `interfaces/test_visa` (71 tests)
+- `CHANGELOG.md`, `docs/lablink_plan.md` (authoritative), `docs/agent_docs/`
+- `agent-bootstrap.md` at repo root — archived in Phase 0c
+
+**Deleted in 0b:** `lablink/tools.py`, `lablink/diagnostics.py`,
+`tests/test_tools.py`.
 
 For the mapping of current code → target code, see `system_architecture.md` §5.
 
@@ -51,15 +71,49 @@ For the mapping of current code → target code, see `system_architecture.md` §
   `server.json` `repository.url` field are unchanged. The GitHub rename
   is a manual step outside Phase 0a; the README and `server.json` package
   identifier already use `lablink-mcp`.
-- **Phase 0b behavioral-equivalence baseline not captured.** See
-  `docs/agent_docs/implementation_log.md` Phase 0a deferred-tasks
-  section. Required before Phase 0b can declare its exit gate met.
-- **CLI `connect`/`query`/`write` subcommands open and close a session per invocation.** Intentional for debug UX but means the session is not persistent across CLI calls (only across MCP calls). Not a concern for v0.1 or the LabLink rearchitecture.
+- **Behavioral-equivalence baseline never captured — 0b exit-gate item left
+  open.** The pre-Phase-0a `agentlink connect` baseline does not exist and the
+  old entry point is gone, so the diff cannot be run; it is also hardware-gated.
+  Structural equivalence argued in review. Capture via Option 1 when the Siglent
+  is available (see `implementation_log.md` Phase 0b exit-gate note).
+- **VISA required-field validation relaxed in 0b.** Only `type`/`alias`/
+  `timeout_ms` are strictly required now; VISA-specific fields default and an
+  empty `resource_string` is caught in `connect()`. This is the plan's design,
+  not an oversight.
+- **No `wrap_tool_errors()` helper in base.py.** The plan mentions one but does
+  not specify it; deferred until a second driver creates real duplication
+  (scope discipline). The two VISA tools inline their error handling.
+- **CLI is still the flat 0a shape** (`lablink query`/`write`, VISA-only) and
+  imports the shared `do_*` functions from `mcp_server`. The subgroup rewrite
+  (`lablink visa query`) and the clean separation are Phase 0c.
+- **CLI `connect`/`query`/`write` open and close a session per invocation.**
+  Intentional for debug UX; sessions persist only across MCP calls. Not a
+  concern for the rearchitecture.
 - **`agent-bootstrap.md` at repo root** references the old architecture. Phase 0c archives it to `docs/archive/agent-bootstrap.md`. Treat it as historical context only.
 
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 0b Complete]** Architectural core landed. Added
+  `lablink/base.py` (data models, config mixins all `kw_only=True`,
+  `Session[ConfigT]`, `LabLinkDriver` ABC). Rewrote `session.py` into a
+  protocol-agnostic registry with three-state `lookup()` + `get(alias,
+  expected_type)`; the shared `pyvisa.ResourceManager` moved onto the VISA
+  driver. Refactored VISA into `lablink/interfaces/visa/` on the ABC,
+  self-registering `visa_query`/`visa_write`. Rewrote `config.py` as a generic
+  loader via `DRIVER_CONFIG_REGISTRY` (`load_instrument_memory` →
+  `load_device_memory`). Added `lablink/interfaces/__init__.py` with both
+  registries + import-time key-match guard. Rewrote `mcp_server.py`: shared
+  lifecycle tools (`connect`/`disconnect`/`list_devices`/`diagnose`) dispatching
+  via the registry, device_memory injected via `dataclasses.replace()`,
+  per-driver tool registration gated on `check_python_deps()`. Deleted
+  `tools.py` + `diagnostics.py`. Test suite re-homed and expanded to 71 (was
+  58): `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
+  `test_fastmcp_late_registration`, `interfaces/test_visa`. Deferred to 0c:
+  `event_logger` rename, CLI subgroups, `_INSTRUCTIONS` multi-driver rewrite,
+  `examples/` restructure. See `implementation_log.md` for per-task detail and
+  the open behavioral-equivalence gate.
 
 - **2026-05-29** — **[Phase 0a Complete]** Mechanical rename + auto-migration shipped.
   `agentlink/` → `lablink/`; entry points `lablink` / `lablink-mcp` replace

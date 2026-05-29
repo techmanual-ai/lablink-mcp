@@ -186,7 +186,18 @@ $ lablink visa query bench_scope "MEAS:FREQ? CH1"
 
 ## 5. Current (Pre-Pivot) Architecture
 
-The current on-disk codebase still reflects the original agentlink-visa design. This section documents what's there now and where each piece moves in Phase 0.
+> **Status (post Phase 0b):** This section is now largely historical. The
+> migration mapping below has been *realized* for the architectural core —
+> `lablink/base.py`, `lablink/session.py` (registry), `lablink/interfaces/`
+> (registries + VISA driver), and the shared-tool dispatch in `mcp_server.py`
+> all exist as described in §§1–4. `agentlink/tools.py` and
+> `agentlink/diagnostics.py` have been deleted (split into the VISA driver and
+> the shared diagnose/system-audit paths). What remains pre-target as of 0b:
+> `scpi_logger.py` (renamed to `event_logger` in 0c), the flat `cli.py`
+> (subgroups in 0c), and the VISA-flavored `_INSTRUCTIONS` (multi-driver rewrite
+> in 0c). The table below is kept for provenance.
+
+The original on-disk codebase reflected the single-driver agentlink-visa design. This section documents what was there and where each piece moved in Phase 0.
 
 ### Current directory
 ```text

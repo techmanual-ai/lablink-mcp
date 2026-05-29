@@ -17,6 +17,124 @@ Format: most recent entry on top. Each entry has the structure:
 
 ---
 
+## Phase 0b — Architectural Core (ABC, data models, VISA refactor, dispatch)
+
+Plan reference: `docs/lablink_plan.md` §9 Phase 0b. Scope: introduce the driver
+ABC + data models, refactor VISA onto the ABC, and route everything through
+`DRIVER_REGISTRY`. The `event_logger` rename, the CLI subgroup rewrite, and the
+`_INSTRUCTIONS` multi-driver rewrite are explicitly deferred to 0c.
+
+### 2026-05-29 — Phase 0b Task 0: FastMCP late-registration smoke test
+**Status:** completed
+**Intent:** Validate the load-bearing assumption (drivers register tools via an
+instance method called after server construction) before building on it.
+**Actions taken:** Wrote `tests/test_fastmcp_late_registration.py`. FastMCP
+3.3.1 exposes `list_tools()` as an **async** method returning `FunctionTool`
+objects with `.name`; the test uses `asyncio.run(mcp.list_tools())`.
+**Surprises / decisions:** The plan's pseudo-code used `mcp.list_tools()`
+sync; the real API is async in 3.x. Test passes — architecture is sound, green
+light for the rest of 0b.
+
+### 2026-05-29 — Phase 0b Tasks 1–7: core build
+**Status:** completed
+**Intent:** Land the multi-driver core with VISA as the only registered driver.
+**Actions taken:**
+- `lablink/base.py` (new): `Result`, `ReadResult`, `ConnectResult` (with the
+  `__post_init__` device_memory→instrument_memory mirror), `DiagnosticResult`,
+  `SystemDepStatus`, `DriverConfig`/`AuthConfig`/`DocumentedConfig` (all
+  `kw_only=True`), `Session[ConfigT]`, and the `LabLinkDriver[ConfigT]` ABC.
+- `lablink/session.py` (rewritten): protocol-agnostic registry — `_sessions`,
+  `register`/`deregister`/`is_registered`/`get_any`, three-state `lookup()` +
+  `SessionLookup`, and `get(alias, expected_type)`. The shared
+  `pyvisa.ResourceManager` moved OUT of session.py onto the VISA driver (§4.2).
+- `lablink/interfaces/visa/{config,driver,__init__}.py` (new): `VisaDriverConfig`
+  and `VisaDriver(LabLinkDriver[VisaDriverConfig])` implementing connect /
+  disconnect / diagnose / register_tools (`visa_query`, `visa_write`) /
+  register_cli_commands / check_python_deps / system_dep_check. Operation logic
+  lives in `visa_query_impl` / `visa_write_impl` so the MCP tool closures, the
+  CLI subgroup, and the flat 0b CLI all share one code path.
+- `lablink/config.py` (rewritten): generic loader resolving
+  `DRIVER_CONFIG_REGISTRY[type]`, filtering TOML keys to the subclass's fields,
+  injecting `alias` from the filename, expanding `_PATH_FIELDS`, converting the
+  legacy singular `techmanual_document_id`, and converting a missing required
+  field (TypeError) into `ConfigError`. `load_instrument_memory` →
+  `load_device_memory`. Auto-migration carried over verbatim.
+- `lablink/interfaces/__init__.py` (new): `DRIVER_REGISTRY` +
+  `DRIVER_CONFIG_REGISTRY` (visa) with the import-time key-match guard.
+- `mcp_server.py` (rewritten): shared lifecycle logic as plain functions
+  (`do_connect`/`do_disconnect`/`do_list_devices`/`do_diagnose`) with thin
+  `@mcp.tool()` wrappers `connect`/`disconnect`/`list_devices`/`diagnose`;
+  server-lifetime driver singletons via `get_driver`; `register_driver_tools()`
+  gates per-driver tool registration on `check_python_deps()`. device_memory is
+  injected at the shared layer via `dataclasses.replace()` (§6.3.1).
+- `cli.py` (updated, flat shape retained): routes through the shared `do_*`
+  functions + the VISA impl methods. Subgroup rewrite stays 0c.
+- Deleted `lablink/tools.py` and `lablink/diagnostics.py` (folded into the VISA
+  driver + the shared diagnose/system-audit paths).
+
+**Surprises / decisions:**
+- **VISA-specific required-field validation relaxed.** v0.1 required 7 fields
+  (resource_string, manufacturer, model_number, ...). The plan's
+  `VisaDriverConfig` defaults all VISA-specific fields, so only the base
+  `DriverConfig` fields (`type`, `alias`, `timeout_ms`) are strictly required;
+  `alias` is filename-injected. `connect()` surfaces a clear error if
+  `resource_string` is empty rather than failing inside pyvisa. The old
+  "missing model_number raises" test was updated to "missing timeout_ms
+  raises" to match the new contract.
+- **Session registration moved after `*IDN?`.** v0.1 registered the resource
+  then cleaned up on IDN failure; the new VISA `connect()` registers the
+  Session only after IDN succeeds, so an IDN failure closes the raw resource
+  and never registers — simpler, and no leak window.
+- **Did not add a `wrap_tool_errors()` helper.** The plan mentions one for
+  base.py but does not specify its contract, and only two VISA tools exist;
+  adding an unspecified abstraction would violate the scope-discipline
+  directive. Revisit when a second driver creates real duplication.
+- **`check_python_deps` probes `pyvisa_py`** (the importable module) while
+  reporting the pip name `pyvisa-py`.
+- `list_tools()` is async (see Task 0). The dispatch tests use `asyncio.run`.
+
+**Open follow-ups (0c and beyond):**
+- `scpi_logger` → `event_logger` rename + canonical-field contract (§6.4).
+- CLI subgroup rewrite (`lablink visa query`), dropping flat `query`/`write`;
+  `VisaDriver.register_cli_commands` is implemented and ready to be wired.
+- `_INSTRUCTIONS` multi-driver rewrite with the runtime driver-count paragraph.
+- `examples/devices/` → `examples/configs/`; I added `type = "visa"` to the
+  existing example now (the loader requires it) but left the directory rename
+  for 0c.
+
+### 2026-05-29 — Phase 0b Tasks (testing)
+**Status:** completed
+**Intent:** Re-home and expand the suite onto the new structure; cover the
+Phase 0b exit-gate dispatch tests.
+**Actions taken:** Deleted `tests/test_tools.py`. Added `tests/test_config.py`
+(loader + device memory + the 11 migration cases), `tests/test_logger.py`,
+`tests/test_shared_tools.py` (shared dispatch + device-memory injection),
+`tests/test_dispatch.py` (registry key-match, unknown type, deps-missing
+connect install hint, wrong-type session → None, register_driver_tools
+gating), and `tests/interfaces/test_visa.py` (VISA connect/disconnect/query/
+write/diagnose/audit-hooks). Added an autouse `_clear_session_registry`
+fixture to conftest. **71 passed** (was 58).
+
+### Phase 0b Exit Gate — status
+- All prior behaviors retained (re-homed) and passing: **71/71**. ✅
+- VISA driver implements the full ABC and self-registers its tools. ✅
+- `mcp_server.py` has no protocol-specific logic — verified the assembled tool
+  surface is exactly `{connect, disconnect, list_devices, diagnose}` (shared) +
+  `{visa_query, visa_write}` (VISA self-registered). ✅
+- Required dispatch tests present and passing (unknown type; deps-missing
+  connect install hint; wrong-type session → None). ✅
+- **Behavioral-equivalence diff against a pre-Phase-0a `agentlink connect`
+  baseline: NOT closeable in this environment.** The baseline was never
+  captured (deferred in 0a, Siglent offline) and the old `agentlink` entry
+  point was removed in 0a, so the diff target does not exist. It also requires
+  real hardware. This gate item remains open and is hardware-gated; the
+  structural equivalence (same dispatch path, same `*IDN?` flow, same identity/
+  memory/doc-id surface) is argued in code review instead. Recommend capturing
+  the baseline via Option 1 (checkout pre-0a commit + plug in the scope) when
+  the scope is next available, then diffing post-0b `lablink connect` output.
+
+---
+
 ## Phase 0a — Mechanical Rename + Auto-Migration
 
 Plan reference: `docs/lablink_plan.md` §9 Phase 0a. Scope is strictly
