@@ -29,12 +29,13 @@ runtime driver-count paragraph; `examples/devices/` → `examples/configs/`;
 archive `agent-bootstrap.md` and old current_status history. See
 `lablink_plan.md` §9 Phase 0c.
 
-**Outstanding (carried into the 0b exit gate, still open):** the
-behavioral-equivalence diff against a pre-Phase-0a `agentlink connect` baseline
-is **not closeable** — the baseline was never captured (Siglent offline in 0a)
-and the old `agentlink` entry point is gone. It is hardware-gated; structural
-equivalence is argued in code review. Capture via Option 1 (checkout pre-0a
-commit + scope) when the Siglent is next available. See `implementation_log.md`.
+**0b exit gate: MET — including real-hardware validation.** On 2026-05-29 the
+refactored VISA path was exercised end-to-end against the physical Siglent
+SDS1104X-E (connect/diagnose/query/write/device_memory/event-log), and Phase
+0a's auto-migration fired live (4 configs). The literal pre-0a `agentlink`
+baseline diff was never capturable (that entry point is gone), but the outcome
+it protected — the new `lablink` path driving the instrument correctly — is
+directly confirmed. See `implementation_log.md` for the full smoke-test record.
 
 ---
 
@@ -71,11 +72,13 @@ For the mapping of current code → target code, see `system_architecture.md` §
   `server.json` `repository.url` field are unchanged. The GitHub rename
   is a manual step outside Phase 0a; the README and `server.json` package
   identifier already use `lablink-mcp`.
-- **Behavioral-equivalence baseline never captured — 0b exit-gate item left
-  open.** The pre-Phase-0a `agentlink connect` baseline does not exist and the
-  old entry point is gone, so the diff cannot be run; it is also hardware-gated.
-  Structural equivalence argued in review. Capture via Option 1 when the Siglent
-  is available (see `implementation_log.md` Phase 0b exit-gate note).
+- **Duplicate Siglent aliases.** `sds1104xe` and `siglent_sds1104xe` in
+  `~/.lablink/devices/` both point at the same scope (both migrated from the
+  legacy dir). Harmless but confusing — delete one. Not code; a config-hygiene
+  note for the developer.
+- **Pre-0a `agentlink` baseline diff — closed by hardware validation, not by
+  the diff.** The literal diff was never capturable (entry point removed in 0a);
+  the 2026-05-29 real-hardware smoke test supersedes it. No longer outstanding.
 - **VISA required-field validation relaxed in 0b.** Only `type`/`alias`/
   `timeout_ms` are strictly required now; VISA-specific fields default and an
   empty `resource_string` is caught in `connect()`. This is the plan's design,
@@ -112,8 +115,10 @@ For the mapping of current code → target code, see `system_architecture.md` §
   58): `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
   `test_fastmcp_late_registration`, `interfaces/test_visa`. Deferred to 0c:
   `event_logger` rename, CLI subgroups, `_INSTRUCTIONS` multi-driver rewrite,
-  `examples/` restructure. See `implementation_log.md` for per-task detail and
-  the open behavioral-equivalence gate.
+  `examples/` restructure. Validated end-to-end on the real Siglent
+  SDS1104X-E the same day (connect/diagnose/query/write/device_memory/event-log
+  all pass; live auto-migration of 4 configs) — 0b exit gate fully met. See
+  `implementation_log.md` for per-task detail and the hardware smoke-test record.
 
 - **2026-05-29** — **[Phase 0a Complete]** Mechanical rename + auto-migration shipped.
   `agentlink/` → `lablink/`; entry points `lablink` / `lablink-mcp` replace

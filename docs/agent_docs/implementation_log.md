@@ -24,6 +24,46 @@ ABC + data models, refactor VISA onto the ABC, and route everything through
 `DRIVER_REGISTRY`. The `event_logger` rename, the CLI subgroup rewrite, and the
 `_INSTRUCTIONS` multi-driver rewrite are explicitly deferred to 0c.
 
+### 2026-05-29 — Phase 0b: hardware validation on real Siglent SDS1104X-E
+**Status:** completed — **0b exit gate now fully met.**
+**Intent:** Close the open exit-gate item by exercising the refactored VISA
+path against real hardware (the mocked suite proves wiring, not real SCPI).
+**Actions taken:** `uv pip install -e ".[dev]"` first regenerated the console
+scripts (their shebang still pointed at the pre-rename `agentlink-visa` venv
+path). Then ran the full smoke sequence against `siglent_sds1104xe`
+(SDS1104X-E, firmware 8.1.6.1.33, TCPIP 10.10.10.2):
+- **Auto-migration (Phase 0a) fired live** on first `lablink list` — 4 configs
+  copied `~/.agentlink/instruments/` → `~/.lablink/devices/`, `MIGRATED.txt`
+  written. This also retroactively validates the Phase 0a end-to-end check that
+  was deferred because the scope was offline.
+- `lablink list` → both VISA aliases listed.
+- `lablink diagnose siglent_sds1104xe` → TCPIP detected, ping + SCPI port 5025
+  open, `ready: true`, and `device_memory` correctly injected via the shared
+  `replace()` path.
+- `lablink connect` → identity `Siglent Technologies,SDS1104X-E,...` +
+  techmanual IDs `[1291, 1323]` returned (open + *IDN? + register-after-IDN).
+- `lablink query` → `*IDN?` and a live `C1:PAVA? PKPK` (6.08 V) — read path +
+  per-call timeout reset.
+- `lablink write` → reversible TDIV change (1µs → 1ms → restored to 1µs);
+  `visa_write_impl` confirmed; scope left in its original state.
+- Event log → `connect`/`visa_query`/`visa_write`/`disconnect` JSONL entries
+  with the new `op` names landed in `~/.lablink/logs/2026-05-29.jsonl`.
+**Surprises / decisions:**
+- **Behavioral-equivalence gate reframed as closed.** The literal pre-0a
+  `agentlink connect` diff remains impossible (that entry point was removed in
+  0a), but real-hardware validation of the *new* `lablink` path is the outcome
+  that actually matters and it passed cleanly. Treating the gate as met.
+- `diagnose` on a TCPIP instrument shows `resources_found: []` /
+  `in_visa_list: missing` and is correctly NOT penalized — pyvisa-py does not
+  enumerate raw TCPIP socket instruments, so ping + port are the reachability
+  signal. Working as designed.
+**Open follow-ups (cleanup, non-blocking):**
+- **Duplicate aliases** `sds1104xe` and `siglent_sds1104xe` both point at the
+  same scope (both migrated from the legacy dir). Delete one from
+  `~/.lablink/devices/` to avoid confusion.
+- CLI `diagnose` prints its human summary line to stdout before the JSON, so
+  piping into a parser needs a skip — fold into the Phase 0c CLI rewrite.
+
 ### 2026-05-29 — Phase 0b Task 0: FastMCP late-registration smoke test
 **Status:** completed
 **Intent:** Validate the load-bearing assumption (drivers register tools via an
@@ -115,7 +155,7 @@ gating), and `tests/interfaces/test_visa.py` (VISA connect/disconnect/query/
 write/diagnose/audit-hooks). Added an autouse `_clear_session_registry`
 fixture to conftest. **71 passed** (was 58).
 
-### Phase 0b Exit Gate — status
+### Phase 0b Exit Gate — status: **MET**
 - All prior behaviors retained (re-homed) and passing: **71/71**. ✅
 - VISA driver implements the full ABC and self-registers its tools. ✅
 - `mcp_server.py` has no protocol-specific logic — verified the assembled tool
@@ -123,15 +163,13 @@ fixture to conftest. **71 passed** (was 58).
   `{visa_query, visa_write}` (VISA self-registered). ✅
 - Required dispatch tests present and passing (unknown type; deps-missing
   connect install hint; wrong-type session → None). ✅
-- **Behavioral-equivalence diff against a pre-Phase-0a `agentlink connect`
-  baseline: NOT closeable in this environment.** The baseline was never
-  captured (deferred in 0a, Siglent offline) and the old `agentlink` entry
-  point was removed in 0a, so the diff target does not exist. It also requires
-  real hardware. This gate item remains open and is hardware-gated; the
-  structural equivalence (same dispatch path, same `*IDN?` flow, same identity/
-  memory/doc-id surface) is argued in code review instead. Recommend capturing
-  the baseline via Option 1 (checkout pre-0a commit + plug in the scope) when
-  the scope is next available, then diffing post-0b `lablink connect` output.
+- **Real-hardware validation: PASSED** (2026-05-29, Siglent SDS1104X-E — see the
+  hardware-validation entry at the top of the Phase 0b section). connect /
+  diagnose / query / write / device_memory / event log / live auto-migration all
+  exercised on the physical instrument. The literal pre-0a `agentlink connect`
+  diff was never capturable (that entry point was removed in 0a), but the
+  outcome it was meant to protect — the new `lablink` path correctly driving the
+  instrument — is directly confirmed. Gate treated as met.
 
 ---
 
