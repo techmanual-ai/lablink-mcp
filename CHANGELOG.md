@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased — LabLink Phase 0b + 0c (multi-driver architecture)
+
+The architectural rewrite from single-driver VISA to a multi-driver dispatch
+system (driver ABC + registries). See `docs/lablink_plan.md` §9.
+
+**Breaking — tool and CLI surface renamed.**
+
+| Old (agentlink-visa / Phase 0a) | New |
+|-----|-----|
+| MCP tool `connect_instrument` | `connect` |
+| MCP tool `disconnect_instrument` | `disconnect` |
+| MCP tool `query_instrument` | `visa_query` |
+| MCP tool `write_instrument` | `visa_write` |
+| MCP tool `diagnose_connection` | `diagnose` (+ new `list_devices`) |
+| CLI `lablink query <alias> ...` | `lablink visa query <alias> ...` |
+| CLI `lablink write <alias> ...` | `lablink visa write <alias> ...` |
+
+Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
+work across all drivers and dispatch via the config `type` field. Per-driver
+operation tools (`visa_query`, `visa_write`) register only when that driver's
+dependencies are installed. CLI shared commands stay top-level; per-driver
+commands move under a driver subgroup (`lablink visa ...`).
+
+**Config now requires a `type` field** selecting the driver (e.g.
+`type = "visa"`). Migrated agentlink-visa configs get `type = "visa"` injected
+automatically (Phase 0a auto-migration); new configs must declare it. Example:
+`examples/configs/visa_scope.toml`.
+
+### Added
+- Driver ABC (`LabLinkDriver`), data models, and config mixins in `lablink/base.py`.
+- `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY` dispatch (`lablink/interfaces/`).
+- `list_devices` tool/`lablink list` reporting per-alias status.
+- System-audit `diagnose()` (no alias): per-driver dependency report.
+
+### Changed
+- `scpi_logger` → `event_logger`; canonical log fields formalized
+  (`ts`/`op`/`alias`/`success` guaranteed; §6.4). The `op` field is now any
+  tool name, not just SCPI ops.
+- Server `instructions` rewritten multi-driver, with a runtime loaded-driver
+  count.
+- `instrument_memory` → `device_memory` on `connect()` (the old field is kept
+  as a deprecated mirror through Phase 1).
+
+### Validated
+- The refactored VISA path was exercised end-to-end on a real Siglent
+  SDS1104X-E (connect / diagnose / query / write / device memory / event log),
+  closing the Phase 0b exit gate.
+
+### Archived
+- `docs/agent-bootstrap.md` → `docs/archive/agent-bootstrap.md`.
+
 ## Unreleased — LabLink Phase 0a (mechanical rename + auto-migration)
 
 **Breaking change.** The `agentlink-visa` PyPI package has been renamed to
@@ -55,8 +106,8 @@ the new names.
 
 ### Known follow-ups
 
-- Phase 0b's behavioral-equivalence gate requires a pre-rename baseline of
-  `agentlink connect <local_instrument>` output. This was deferred at
-  developer request because the local Siglent scope was offline at the time
-  of Phase 0a. See `docs/agent_docs/implementation_log.md` for the
-  recommended capture strategy.
+- Phase 0b's behavioral-equivalence gate originally wanted a pre-rename
+  baseline of `agentlink connect <local_instrument>` output. That baseline was
+  never capturable (the `agentlink` entry point was removed in 0a) — it has
+  since been **superseded by direct real-hardware validation of the new
+  `lablink` path** (Phase 0b, Siglent SDS1104X-E). Resolved.

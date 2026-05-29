@@ -17,6 +17,73 @@ Format: most recent entry on top. Each entry has the structure:
 
 ---
 
+## Phase 0c — Peripheral Cleanup (logging, CLI, instructions, examples, archives)
+
+Plan reference: `docs/lablink_plan.md` §9 Phase 0c. Architectural/content
+rewrites that don't change the 0b data flow.
+
+### 2026-05-29 — Phase 0c Tasks 1-7
+**Status:** completed — **0c exit gate met.**
+**Intent:** Finish the peripheral rewrites the 0b core deferred.
+**Actions taken:**
+- **Task 2 — logger rename.** `lablink/scpi_logger.py` → `lablink/event_logger.py`.
+  `log_event` signature formalized to `log_event(*, op, alias, success,
+  error=None, duration_ms=None, **extra)` — the three canonical fields are now
+  required keyword args (ts auto-added); error/duration_ms recorded only when
+  set; per-tool extras pass through. Updated call sites in `driver.py` and
+  `mcp_server.py`; retargeted `tests/test_logger.py`.
+- **Task 1 — CLI rewrite.** `cli.py` now keeps shared lifecycle commands
+  (connect/disconnect/list/diagnose) top-level and registers per-driver
+  subgroups via `_register_driver_clis()` → each driver's
+  `register_cli_commands(group)`, gated on `check_python_deps()`. Flat
+  `lablink query`/`write` dropped in favor of `lablink visa query`/`write`.
+  `VisaDriver.register_cli_commands` reworked so its subcommands open a session
+  (connect → op → disconnect per invocation) via the driver's own methods +
+  `load_config` — no `mcp_server` dependency. `diagnose` now prints its human
+  summary to stderr so stdout is pure JSON.
+- **Task 3 — `_INSTRUCTIONS`.** Rewritten multi-driver: architecture overview,
+  discovery flow (list_devices/diagnose), "tool docstrings are the per-protocol
+  source of truth", device_memory + deprecated-instrument_memory note,
+  techmanual.ai usage. Runtime-aware: `_build_instructions()` substitutes the
+  loaded-driver count/list (`{driver_count} driver(s) ...`) computed from
+  `check_python_deps()` at import.
+- **Task 7 — examples.** `git mv examples/devices/example_scope.toml
+  examples/configs/visa_scope.toml` (carries `type = "visa"`). README example
+  link updated.
+- **Tasks 4-5 — archives.** `docs/agent-bootstrap.md` →
+  `docs/archive/agent-bootstrap.md` (readme_agent pointer updated). Pre-pivot
+  agentlink-visa Recent History (2026-05-26/27) moved from `current_status.md`
+  to `docs/archive/current_status_agentlink_visa.md`.
+- **Task 6 — tests.** Added: CLI-subgroup dep-gating, `diagnose()` no-alias
+  enumerates every driver with an exhaustive status, event-logger canonical
+  four-field contract on a real tool call. **76 passing** (was 71).
+- Docs (README + CHANGELOG) updated for the breaking tool/CLI renames per the
+  plan's discoverability requirement.
+**Surprises / decisions:**
+- Kept `log_event` "never raises" for filesystem/serialization errors; the
+  required-kwarg signature enforces the contract at call sites (a forgotten
+  field is a dev-time TypeError caught by tests, not a runtime logging failure).
+- The per-invocation connect/disconnect in the VISA CLI subgroup matches the
+  documented debug-UX contract (CLI sessions don't persist across processes).
+- **Mid-0c the bench Siglent dropped off the network** (OS-level `ping
+  10.10.10.2` fails; both the shared `connect` and the new `visa query` return
+  identical `VI_ERROR_RSRC_NFOUND`). Not a regression — it incidentally
+  validated the new subgroup's error-handling path (clean structured error +
+  hint, correct diagnose ping/port-fail report). The 0c happy path reuses the
+  0b-hardware-validated `VisaDriver.connect`/`*_impl`; a one-liner
+  `lablink visa query siglent_sds1104xe "*IDN?"` will confirm it when the scope
+  is back, but it is not a 0c exit-gate requirement.
+**Open follow-ups:** none for 0c. Next: Phase 1 (SSH driver, exec-only).
+
+### Phase 0c Exit Gate — status: **MET**
+- All 0b tests still pass (76/76 total). ✅
+- New CLI subgroup tests pass (dep-gating). ✅
+- Event-logger contract verified by tests. ✅
+- `_INSTRUCTIONS` reviewed against the multi-driver tool surface (driver-count
+  substitution confirmed). ✅
+
+---
+
 ## Phase 0b — Architectural Core (ABC, data models, VISA refactor, dispatch)
 
 Plan reference: `docs/lablink_plan.md` §9 Phase 0b. Scope: introduce the driver

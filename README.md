@@ -20,6 +20,11 @@ breaking change.** If you previously installed `agentlink-visa`:
    `agentlink ...` → `lablink ...`.
 4. Update env vars in any scripts: `AGENTLINK_CONFIG_DIR`, `AGENTLINK_LOG_DIR`,
    and `AGENTLINK_VISA_BACKEND` are now `LABLINK_*`.
+5. **SCPI CLI commands moved under a `visa` subgroup.** `lablink query ...` and
+   `lablink write ...` are now `lablink visa query ...` and
+   `lablink visa write ...`. The MCP tools renamed too: `query_instrument` /
+   `write_instrument` → `visa_query` / `visa_write`, and the shared lifecycle
+   tools are now `connect` / `disconnect` / `list_devices` / `diagnose`.
 
 **Your existing instrument configs are migrated automatically.** On first run,
 `lablink` and `lablink-mcp` will copy every `*.toml` and `*.md` from
@@ -79,7 +84,7 @@ This prints a tuple of connected instruments, e.g. `('USB0::0x0699::0x0527::C012
 
 `read_termination` and `write_termination` are `"\n"` for most instruments. Copy the example above as a safe starting point; change only if your instrument requires it.
 
-See [examples/devices/example_scope.toml](examples/devices/example_scope.toml) for a full template.
+See [examples/configs/visa_scope.toml](examples/configs/visa_scope.toml) for a full template.
 
 ### 2. Verify with the CLI
 
@@ -178,9 +183,13 @@ lablink list                              # list all configured instruments
 lablink diagnose                          # check VISA backend and available resources
 lablink diagnose tek_mso44               # add alias-specific reachability checks
 lablink connect tek_mso44                # open session, print IDN
-lablink query tek_mso44 "MEAS:FREQ? CH1" # send query, print response
-lablink write tek_mso44 "CH1:SCALE 0.5"  # send command
+lablink visa query tek_mso44 "MEAS:FREQ? CH1"  # send SCPI query, print response
+lablink visa write tek_mso44 "CH1:SCALE 0.5"   # send SCPI command
 ```
+
+Per-protocol operations live under a driver subgroup (`lablink visa ...`); only
+drivers whose dependencies are installed appear. The shared lifecycle commands
+(`connect`, `disconnect`, `list`, `diagnose`) are always present.
 
 `diagnose` prints a human-readable issue list to stderr and the full JSON report to stdout. Run it first if `connect` fails.
 

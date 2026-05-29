@@ -1,41 +1,34 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 0b Complete — Ready for Phase 0c (Peripheral Cleanup)**
+**LabLink Phase 0 Complete (0a + 0b + 0c) — Ready for Phase 1 (SSH driver)**
 
-Phase 0b landed the architectural core. The single-driver VISA implementation
-is now a multi-driver dispatch system:
-- `lablink/base.py` — all data models (`Result`, `ReadResult`, `ConnectResult`,
-  `DiagnosticResult`, `SystemDepStatus`), config dataclasses (`DriverConfig` +
+Phase 0c finished the peripheral cleanup on top of the 0b core; all of Phase 0
+(migration, architectural core, cleanup) is now done. The codebase is a
+multi-driver dispatch system with VISA as the only v1 driver so far:
+- `lablink/base.py` — data models, config dataclasses (`DriverConfig` +
   `AuthConfig`/`DocumentedConfig` mixins, all `kw_only=True`),
-  `Session[ConfigT]`, and the `LabLinkDriver[ConfigT]` ABC.
-- VISA refactored into `lablink/interfaces/visa/` (driver + config) on the ABC;
-  it self-registers `visa_query` / `visa_write` via `register_tools(mcp)`.
+  `Session[ConfigT]`, the `LabLinkDriver[ConfigT]` ABC.
+- VISA in `lablink/interfaces/visa/` on the ABC; self-registers `visa_query` /
+  `visa_write` (tools) and the `lablink visa ...` CLI subgroup.
 - Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
-  live in `mcp_server.py` and dispatch via `DRIVER_REGISTRY` /
-  `DRIVER_CONFIG_REGISTRY`. No protocol-specific logic remains in the server.
-- `lablink/tools.py` and `lablink/diagnostics.py` deleted (folded in).
+  in `mcp_server.py` dispatch via `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY`.
+- `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
+  contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**71/71 tests pass** (was 58). Tool surface verified: 4 shared + 2 VISA.
+**76/76 tests pass.** Tool surface: 4 shared + 2 VISA. Both the 0b and 0c
+exit gates are MET (see `implementation_log.md`); the VISA path was validated
+end-to-end on the real Siglent SDS1104X-E.
 
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Next phase: 0c — Peripheral Cleanup.** `scpi_logger` → `event_logger`
-(+ §6.4 field contract); CLI subgroup rewrite (`lablink visa query`, dropping
-flat `query`/`write` — `VisaDriver.register_cli_commands` is already
-implemented and ready to wire); `_INSTRUCTIONS` multi-driver rewrite with the
-runtime driver-count paragraph; `examples/devices/` → `examples/configs/`;
-archive `agent-bootstrap.md` and old current_status history. See
-`lablink_plan.md` §9 Phase 0c.
-
-**0b exit gate: MET — including real-hardware validation.** On 2026-05-29 the
-refactored VISA path was exercised end-to-end against the physical Siglent
-SDS1104X-E (connect/diagnose/query/write/device_memory/event-log), and Phase
-0a's auto-migration fired live (4 configs). The literal pre-0a `agentlink`
-baseline diff was never capturable (that entry point is gone), but the outcome
-it protected — the new `lablink` path driving the instrument correctly — is
-directly confirmed. See `implementation_log.md` for the full smoke-test record.
+**Next phase: 1 — SSH driver (exec-only).** First *new* driver; validates the
+dispatch architecture for a protocol with genuinely different semantics. Tools
+`ssh_exec` + `ssh_shell_session`; deps `paramiko`; `SshDriverConfig(DriverConfig,
+AuthConfig)`. Streaming is deferred to Phase 1.5. See `lablink_plan.md` §9
+Phase 1. Per §13 kill-criteria, re-confirm the dispatch model feels right
+before building it (the 0c CLI/tool work is good evidence it does).
 
 ---
 
@@ -47,19 +40,19 @@ directly confirmed. See `implementation_log.md` for the full smoke-test record.
 - `lablink/config.py` — generic loader via `DRIVER_CONFIG_REGISTRY`; auto-migration
 - `lablink/interfaces/__init__.py` — `DRIVER_REGISTRY` + `DRIVER_CONFIG_REGISTRY`
 - `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig` (only v1 driver so far)
-- `lablink/scpi_logger.py` — event log (renamed to `event_logger` in 0c)
+- `lablink/event_logger.py` — JSONL event log; §6.4 canonical-field contract
 - `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
-- `cli.py` — flat CLI (subgroup rewrite is 0c); `lablink`
+- `cli.py` — shared subcommands + per-driver subgroups (`lablink visa ...`); `lablink`
 - `~/.lablink/devices/<alias>.toml` config location; legacy
   `~/.agentlink/instruments/` auto-migrated on first run
-- `examples/devices/example_scope.toml` (now carries `type = "visa"`)
+- `examples/configs/visa_scope.toml` (carries `type = "visa"`)
 - `tests/` — `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
-  `test_fastmcp_late_registration`, `interfaces/test_visa` (71 tests)
+  `test_fastmcp_late_registration`, `interfaces/test_visa` (76 tests)
 - `CHANGELOG.md`, `docs/lablink_plan.md` (authoritative), `docs/agent_docs/`
-- `agent-bootstrap.md` at repo root — archived in Phase 0c
+- `docs/archive/` — `agent-bootstrap.md`, `current_status_agentlink_visa.md`
 
 **Deleted in 0b:** `lablink/tools.py`, `lablink/diagnostics.py`,
-`tests/test_tools.py`.
+`tests/test_tools.py`. **Renamed in 0c:** `scpi_logger.py` → `event_logger.py`.
 
 For the mapping of current code → target code, see `system_architecture.md` §5.
 
@@ -67,36 +60,41 @@ For the mapping of current code → target code, see `system_architecture.md` §
 
 ## Technical Debt & Known Issues
 
-- **GitHub repo still named `agentlink-visa`.** Local repo dir, GitHub
-  remote URL (`github.com/techmanual-ai/agentlink-visa`), and the
-  `server.json` `repository.url` field are unchanged. The GitHub rename
-  is a manual step outside Phase 0a; the README and `server.json` package
-  identifier already use `lablink-mcp`.
-- **Duplicate Siglent aliases.** `sds1104xe` and `siglent_sds1104xe` in
-  `~/.lablink/devices/` both point at the same scope (both migrated from the
-  legacy dir). Harmless but confusing — delete one. Not code; a config-hygiene
-  note for the developer.
-- **Pre-0a `agentlink` baseline diff — closed by hardware validation, not by
-  the diff.** The literal diff was never capturable (entry point removed in 0a);
-  the 2026-05-29 real-hardware smoke test supersedes it. No longer outstanding.
+- **`server.json` `repository.url` may still reference `agentlink-visa`.** The
+  GitHub repo itself has been renamed (the git remote is now
+  `github.com:techmanual-ai/lablink-mcp.git`), but `server.json`'s
+  `repository.url` field has not been audited since — verify/fix before any
+  registry publish. (The README and package identifier already use `lablink-mcp`.)
 - **VISA required-field validation relaxed in 0b.** Only `type`/`alias`/
-  `timeout_ms` are strictly required now; VISA-specific fields default and an
-  empty `resource_string` is caught in `connect()`. This is the plan's design,
-  not an oversight.
+  `timeout_ms` are strictly required; VISA-specific fields default and an empty
+  `resource_string` is caught in `connect()`. Plan design, not an oversight.
 - **No `wrap_tool_errors()` helper in base.py.** The plan mentions one but does
   not specify it; deferred until a second driver creates real duplication
   (scope discipline). The two VISA tools inline their error handling.
-- **CLI is still the flat 0a shape** (`lablink query`/`write`, VISA-only) and
-  imports the shared `do_*` functions from `mcp_server`. The subgroup rewrite
-  (`lablink visa query`) and the clean separation are Phase 0c.
-- **CLI `connect`/`query`/`write` open and close a session per invocation.**
-  Intentional for debug UX; sessions persist only across MCP calls. Not a
-  concern for the rearchitecture.
-- **`agent-bootstrap.md` at repo root** references the old architecture. Phase 0c archives it to `docs/archive/agent-bootstrap.md`. Treat it as historical context only.
+- **CLI commands open and close a session per invocation.** Intentional for
+  debug UX; sessions persist only across MCP calls. Not a concern for the
+  rearchitecture.
+- **`duration_ms` not yet emitted.** §6.4 lists it as a recommended log field
+  but no tool measures wall-clock time yet. Optional; add when useful.
 
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 0c Complete]** Peripheral cleanup on top of the 0b
+  core. Renamed `scpi_logger.py` → `event_logger.py` and formalized the §6.4
+  log contract (`log_event(*, op, alias, success, error=None, duration_ms=None,
+  **extra)`; ts/op/alias/success guaranteed). Rewrote `cli.py`: shared
+  lifecycle subcommands stay top-level, per-driver subgroups register via
+  `register_cli_commands` (so `lablink visa query/write`; flat `query`/`write`
+  dropped); `diagnose` now emits pure JSON to stdout. Rewrote `_INSTRUCTIONS`
+  multi-driver with a runtime loaded-driver count. Moved
+  `examples/devices/example_scope.toml` → `examples/configs/visa_scope.toml`.
+  Archived `docs/agent-bootstrap.md` and the pre-pivot agentlink-visa history
+  into `docs/archive/`. Added CLI-gating, diagnose-enumeration, and
+  event-logger-contract tests (76 passing). Updated README + CHANGELOG for the
+  breaking tool/CLI renames. All of Phase 0 is now complete. (Bench Siglent
+  went offline mid-session — confirmed not a regression; OS-level ping fails.)
 
 - **2026-05-29** — **[Phase 0b Complete]** Architectural core landed. Added
   `lablink/base.py` (data models, config mixins all `kw_only=True`,
@@ -141,23 +139,11 @@ For the mapping of current code → target code, see `system_architecture.md` §
 
 - **2026-05-28** — **[Planning]** Wrote `docs/lablink_plan.md` v2 (~640 lines): single-repo multi-driver architecture; shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`) + per-driver operation tools (`visa_query`, `ssh_exec`, `rest_get`, ...) registered dynamically based on installed extras. Replaces an earlier draft that proposed a uniform `connect/query/write/read/custom_action` surface — that draft was rejected because the per-protocol semantic overload made it the worst of both worlds. Plan locks: `Generic[ConfigT]` on Session and Driver, `AuthConfig` and `DocumentedConfig` config mixins, streaming-deferred-to-post-v1, auto-migration in Phase 0a (not 0b), `python_shell` driver promoted into v1 as the vendor-SDK gateway.
 
-- **2026-05-27** — **[Demo / Validation]** Square-wave oscilloscope demo run on real hardware. Agent measured relative time offset between channels on a real scope using VISA/SCPI through agentlink-visa MCP. Video footage captured for product. Demo validated that (1) the architecture works end-to-end on real hardware, (2) DUT control is the value proposition (not techmanual demo), and (3) techmanual.ai layered on top measurably improves first-try success on unfamiliar instruments. This demo result drove the LabLink architectural pivot.
-
-- **2026-05-27** — **[Feature]** Multi-doc IDs, alias naming convention, explicit techmanual instruction. (1) `techmanual_document_id: Optional[int]` renamed to `techmanual_document_ids: list[int]` in `InstrumentConfig`; legacy singular field auto-converted on load via `_load_document_ids()`. (2) `connect()` response key updated to `techmanual_document_ids`. (3) `_INSTRUCTIONS` in `mcp_server.py`: added `## Using techmanual.ai` section directing agents to consult docs before issuing SCPI; updated config format docs; added `<manufacturer>_<model>` alias naming convention. (4) Both local instrument configs updated to `techmanual_document_ids = [1291, 1323]`. (5) Agent docs updated. 3 new tests; 47/47 passing.
-
-- **2026-05-27** — **[Feature]** Added per-instrument memory file. `load_instrument_memory(alias)` added to `config.py` — reads `~/.agentlink/instruments/<alias>.md`, returns content or None. `connect()` response now includes `instrument_memory` field. `run_diagnostics()` now includes `instrument_memory` in `alias_check`. Added `## Instrument Memory` section to `_INSTRUCTIONS` with format spec. 7 new tests. 44/44 passing.
-
-- **2026-05-27** — **[Feature]** Added SCPI transaction logging and VISA/SCPI agent context. New `agentlink/scpi_logger.py`: `log_event(**fields)` appends JSONL entries to `~/.agentlink/logs/YYYY-MM-DD.jsonl`. Default-on; disable by setting `AGENTLINK_LOG_DIR=""`. Every connect/disconnect/query/write call logs op, alias, command, response/error. Never raises. Added `## VISA/SCPI Behavior` section to `_INSTRUCTIONS`. Added 8 `TestScpiLogger` tests. 37/37 tests passing.
-
-- **2026-05-26** — **[Bugfix + Feature]** Pre-hardware polish pass. Fixed session leak in `connect()`. Fixed `agentlink list` stdout/stderr bug. Removed dead `QueryError` exception. Added `agentlink/diagnostics.py`: `run_diagnostics(alias=None)` checks pyvisa/pyvisa-py versions, VISA backend health, `list_resources()` output, interface-type breakdown, config directory status, and alias-specific reachability. Exposed as `diagnose_connection` MCP tool and `agentlink diagnose [alias]` CLI command. 29/29 tests passing.
-
-- **2026-05-26** — **[UX/Docs]** Added MCP server-level `instructions` to `mcp_server.py`. Created `server.json` (MCP registry manifest). Rewrote `README.md`: pip-based install, `"command": "agentlink-mcp"` MCP config pattern.
-
-- **2026-05-26** — **[Bugfix/Polish]** Pre-hardware audit pass. Fixed CLI double command registration. Fixed `ResourceManager` leak in `session.py`. Fixed silent double-connect overwrite. Added broken-config warnings to `agentlink list`. 17/17 tests passing.
-
-- **2026-05-26** — **[MVP]** Full agentlink-visa v0.1 implementation complete. Built: `agentlink/exceptions.py`, `agentlink/config.py`, `agentlink/session.py`, `agentlink/tools.py`, `mcp_server.py`, `cli.py`, `tests/test_tools.py`, etc. 16/16 unit tests passing (all mocked, no hardware required).
-
-- **2026-05-26** — **[Bootstrap]** Repository created. `agent-bootstrap.md` written by lead developer establishing founding agentlink-visa design decisions. `docs/agent_docs/` scaffolded. No application code yet.
+- **Earlier agentlink-visa-era history (pre-pivot, 2026-05-26 → 2026-05-27)**
+  — the original single-driver v0.1 implementation log (MVP, diagnostics,
+  SCPI logging, per-instrument memory, multi-doc IDs, and the square-wave
+  hardware demo that drove the pivot) is archived in
+  `docs/archive/current_status_agentlink_visa.md`.
 
 ---
 

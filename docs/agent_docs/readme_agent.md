@@ -23,7 +23,7 @@ Ingest the following documents in order. The sequence builds context from highes
 5. **`docs/lablink_plan.md`:** The authoritative architectural plan for LabLink. Supersedes `project_goal.md` and `system_architecture.md` wherever they conflict. Read this before any non-trivial design discussion or implementation work.
 6. **`system_architecture.md`:** Component map for the current (pre-pivot) implementation, with pointers to where each piece moves in the LabLink target architecture.
 
-> **Bootstrap note:** If `docs/agent_docs/` is absent when you read `agent-bootstrap.md`, your first job is to scaffold this directory per Section 6 of that document before touching any code. Note: `agent-bootstrap.md` references the original agentlink-visa design and will be archived during Phase 0b. Use it for historical context only.
+> **Bootstrap note:** The original founding document now lives at `docs/archive/agent-bootstrap.md` (archived in Phase 0c). It references the original agentlink-visa design — use it for historical context only; the authoritative spec is `docs/lablink_plan.md`.
 
 ---
 
