@@ -21,13 +21,13 @@
 ### MCP (FastMCP)
 - Follow the FastMCP stdio pattern.
 - The MCP tool surface has two layers (see `docs/ARCHITECTURE.md` §2):
-  - **Shared lifecycle tools** (`connect`, `disconnect`, `list_devices`, `diagnose`) registered in `mcp_server.py` and dispatched via `DRIVER_REGISTRY[type]`.
+  - **Shared lifecycle tools** (`connect`, `disconnect`, `list_devices`, `diagnose`) registered in `lablink/mcp_server.py` and dispatched via `DRIVER_REGISTRY[type]`.
   - **Per-driver operation tools** (`visa_query`, `ssh_exec`, etc.) registered inside each driver's `register_tools(mcp)` method, only when the driver's deps are present.
 - Tool return values for error cases must be structured dicts (`{"success": false, "error": "...", "hint": "..."}`) rather than raising exceptions.
 - Per-driver tool docstrings must explicitly define what each parameter means in this protocol's terms. The agent uses these as its source of truth.
 
 ### CLI (Click)
-- Click root group in `cli.py`. Shared subcommands always present. Per-driver subgroups (`lablink visa ...`, `lablink ssh ...`, etc.) registered via each driver's `register_cli_commands(group)` method, mirroring the MCP tool registration pattern.
+- Click root group in `lablink/cli.py`. Shared subcommands always present. Per-driver subgroups (`lablink visa ...`, `lablink ssh ...`, etc.) registered via each driver's `register_cli_commands(group)` method, mirroring the MCP tool registration pattern.
 - Status/diagnostic output goes to stderr. Command output goes to stdout.
 - CLI commands should be thin wrappers over the same per-driver code paths used by MCP tools.
 
@@ -98,7 +98,7 @@ The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tool
 
 ## 5. Per-Driver Agent Context Pattern
 
-Each driver registers operation tools whose **docstrings** carry the per-protocol semantics that the agent needs. The `_INSTRUCTIONS` constant in `mcp_server.py` no longer carries every protocol detail; it provides a multi-driver architecture overview and points the agent to:
+Each driver registers operation tools whose **docstrings** carry the per-protocol semantics that the agent needs. The `_INSTRUCTIONS` constant in `lablink/mcp_server.py` no longer carries every protocol detail; it provides a multi-driver architecture overview and points the agent to:
 
 - `diagnose()` to see which drivers are available
 - Per-driver tool docstrings for protocol semantics

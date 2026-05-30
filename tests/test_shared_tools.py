@@ -7,7 +7,7 @@ particular driver's behavior.
 
 from unittest.mock import MagicMock, patch
 
-import mcp_server
+import lablink.mcp_server as mcp_server
 from lablink import session as session_registry
 from lablink.base import ConnectResult, DiagnosticResult, Result, Session
 from lablink.interfaces.visa import VisaDriverConfig
@@ -31,9 +31,9 @@ class TestConnect:
         driver.connect.return_value = ConnectResult(
             success=True, alias="scope", interface_type="visa", identity="TEK"
         )
-        with patch("mcp_server.load_config", return_value=config), \
-             patch("mcp_server.get_driver", return_value=driver), \
-             patch("mcp_server.load_device_memory", return_value="MEM"):
+        with patch("lablink.mcp_server.load_config", return_value=config), \
+             patch("lablink.mcp_server.get_driver", return_value=driver), \
+             patch("lablink.mcp_server.load_device_memory", return_value="MEM"):
             result = mcp_server.do_connect("scope")
 
         driver.connect.assert_called_once_with(config)
@@ -45,7 +45,7 @@ class TestConnect:
     def test_config_error_returns_structured_error(self):
         from lablink.exceptions import ConfigError
 
-        with patch("mcp_server.load_config", side_effect=ConfigError("bad")):
+        with patch("lablink.mcp_server.load_config", side_effect=ConfigError("bad")):
             result = mcp_server.do_connect("scope")
         assert result["success"] is False
         assert "bad" in result["error"]
@@ -57,17 +57,17 @@ class TestConnect:
         driver.connect.return_value = ConnectResult(
             success=False, alias="scope", interface_type="visa", error="boom"
         )
-        with patch("mcp_server.load_config", return_value=config), \
-             patch("mcp_server.get_driver", return_value=driver), \
-             patch("mcp_server.load_device_memory") as mem:
+        with patch("lablink.mcp_server.load_config", return_value=config), \
+             patch("lablink.mcp_server.get_driver", return_value=driver), \
+             patch("lablink.mcp_server.load_device_memory") as mem:
             result = mcp_server.do_connect("scope")
         assert result["success"] is False
         mem.assert_not_called()
 
     def test_missing_deps_returns_install_hint(self):
         config = _visa_config()
-        with patch("mcp_server.load_config", return_value=config), \
-             patch("mcp_server._missing_python_deps", return_value=["pyvisa"]):
+        with patch("lablink.mcp_server.load_config", return_value=config), \
+             patch("lablink.mcp_server._missing_python_deps", return_value=["pyvisa"]):
             result = mcp_server.do_connect("scope")
         assert result["success"] is False
         assert "pip install lablink-mcp[visa]" in result["hint"]
@@ -86,7 +86,7 @@ class TestDisconnect:
         driver = MagicMock()
         driver.disconnect.return_value = Result(success=True)
 
-        with patch("mcp_server.get_driver", return_value=driver):
+        with patch("lablink.mcp_server.get_driver", return_value=driver):
             result = mcp_server.do_disconnect("scope")
 
         assert result["success"] is True
@@ -100,7 +100,7 @@ class TestDisconnect:
         driver = MagicMock()
         driver.disconnect.return_value = Result(success=False, error="x")
 
-        with patch("mcp_server.get_driver", return_value=driver):
+        with patch("lablink.mcp_server.get_driver", return_value=driver):
             mcp_server.do_disconnect("scope")
 
         assert not session_registry.is_registered("scope")
@@ -181,9 +181,9 @@ class TestDiagnose:
         driver.diagnose.return_value = DiagnosticResult(
             ready=True, alias="scope", interface_type="visa"
         )
-        with patch("mcp_server.load_config", return_value=config), \
-             patch("mcp_server.get_driver", return_value=driver), \
-             patch("mcp_server.load_device_memory", return_value="MEM"):
+        with patch("lablink.mcp_server.load_config", return_value=config), \
+             patch("lablink.mcp_server.get_driver", return_value=driver), \
+             patch("lablink.mcp_server.load_device_memory", return_value="MEM"):
             report = mcp_server.do_diagnose("scope")
         assert report["ready"] is True
         assert report["device_memory"] == "MEM"
@@ -191,7 +191,7 @@ class TestDiagnose:
     def test_alias_config_error(self):
         from lablink.exceptions import ConfigError
 
-        with patch("mcp_server.load_config", side_effect=ConfigError("nope")):
+        with patch("lablink.mcp_server.load_config", side_effect=ConfigError("nope")):
             report = mcp_server.do_diagnose("scope")
         assert report["ready"] is False
         assert "nope" in report["error"]

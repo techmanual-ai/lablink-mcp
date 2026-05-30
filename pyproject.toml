@@ -7,7 +7,35 @@ name = "lablink-mcp"
 version = "0.1.0"
 description = "MCP server for direct AI agent control of lab devices — VISA/SCPI instruments, SSH hosts, REST APIs, serial devices, and Python environments"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
+keywords = [
+    "mcp",
+    "ai-agents",
+    "lab-automation",
+    "visa",
+    "scpi",
+    "instrument-control",
+    "test-equipment",
+    "ssh",
+    "serial",
+    "hardware",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Networking",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "fastmcp>=2.0",
     "click>=8.0",
@@ -17,10 +45,12 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/techmanual-ai/lablink-mcp"
 Repository = "https://github.com/techmanual-ai/lablink-mcp"
+Issues = "https://github.com/techmanual-ai/lablink-mcp/issues"
+Changelog = "https://github.com/techmanual-ai/lablink-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
-lablink = "cli:cli"
-lablink-mcp = "mcp_server:main"
+lablink = "lablink.cli:cli"
+lablink-mcp = "lablink.mcp_server:main"
 
 [project.optional-dependencies]
 visa = ["pyvisa>=1.14", "pyvisa-py>=0.7"]
@@ -32,4 +62,4 @@ all = ["lablink-mcp[visa,ssh,rest,serial,python_shell]"]
 dev = ["pytest>=8.0", "pyvisa>=1.14", "pyvisa-py>=0.7", "paramiko>=3.0", "httpx>=0.27", "pyserial>=3.5"]
 
 [tool.hatch.build.targets.wheel]
-include = ["lablink/**", "mcp_server.py", "cli.py"]
+include = ["lablink/**"]

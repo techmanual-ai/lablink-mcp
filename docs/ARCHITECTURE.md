@@ -75,11 +75,14 @@ lablink-mcp/
 │   ├── ARCHITECTURE.md             # this file
 │   └── agent_docs/                 # contributor/agent working guides
 ├── lablink/
+│   ├── mcp_server.py               # FastMCP entrypoint; shared tools + driver.register_tools()
+│   ├── cli.py                      # Click root; driver.register_cli_commands()
 │   ├── base.py                     # data models, config dataclasses, Session, the driver ABC
 │   ├── config.py                   # TOML loader via DRIVER_CONFIG_REGISTRY; device-memory reader
 │   ├── session.py                  # _sessions registry; three-state lookup
 │   ├── event_logger.py             # JSONL event log
 │   ├── exceptions.py               # ConfigError, SessionError, DriverError
+│   ├── py.typed                    # PEP 561 marker
 │   └── interfaces/
 │       ├── __init__.py             # DRIVER_REGISTRY, DRIVER_CONFIG_REGISTRY
 │       ├── visa/                   # driver.py + config.py per driver
@@ -88,14 +91,12 @@ lablink-mcp/
 │       ├── serial/
 │       ├── python_shell/           # + bootstrap.py (subprocess REPL)
 │       └── external/               # routing stub for vendor-supplied MCP servers
-├── mcp_server.py                   # FastMCP entrypoint; shared tools + driver.register_tools()
-├── cli.py                          # Click root; driver.register_cli_commands()
 ├── tests/
 ├── examples/configs/               # one example .toml per driver
 └── pyproject.toml
 ```
 
-There is no `lablink/tools.py`. Shared lifecycle tools live in `mcp_server.py`;
+There is no `lablink/tools.py`. Shared lifecycle tools live in `lablink/mcp_server.py`;
 per-driver operation tools live inside each `lablink/interfaces/<type>/driver.py`
 and self-register via `register_tools(mcp)`. The dispatch layer is the two
 registries.
@@ -125,11 +126,11 @@ load time (TOML does not). `load_device_memory(alias)` is the single reader of
 **`lablink/interfaces/<type>/`** — one subpackage per driver: `driver.py`
 (subclass of `LabLinkDriver`) and `config.py` (subclass of `DriverConfig`).
 
-**`mcp_server.py`** — FastMCP entrypoint. Registers the four shared lifecycle
+**`lablink/mcp_server.py`** — FastMCP entrypoint. Registers the four shared lifecycle
 tools, then for each driver whose deps are present, instantiates it and calls
 `register_tools(mcp)`. Holds driver instances as server-lifetime singletons.
 
-**`cli.py`** — Click root group. Shared subcommands always present; per-driver
+**`lablink/cli.py`** — Click root group. Shared subcommands always present; per-driver
 subgroups (`lablink visa …`) registered via `register_cli_commands(group)` with
 the same dep gating as the MCP server.
 
@@ -212,12 +213,12 @@ DRIVER_CONFIG_REGISTRY: dict[str, type[DriverConfig]]   # type -> config class
 
 An import-time check raises `RuntimeError` if their key sets ever diverge (it
 uses `if/raise`, not `assert`, so `python -O` cannot strip it). Adding a driver
-is one line in each registry — no changes to `config.py`, `mcp_server.py`, or
-`cli.py`.
+is one line in each registry — no changes to `config.py`, `lablink/mcp_server.py`, or
+`lablink/cli.py`.
 
 ### 6.2 Instance lifecycle and state placement
 
-Driver instances are **server-lifetime singletons** held in `mcp_server.py`,
+Driver instances are **server-lifetime singletons** held in `lablink/mcp_server.py`,
 keyed by `type_name`, instantiated once at startup if their deps are present.
 The same instance handles every `connect` / `disconnect` / `diagnose` and every
 tool it registered (tool closures capture the instance at registration time).
@@ -500,7 +501,7 @@ sets `truncated`. Continuous/streaming subprocess output is out of scope for
    underlying library; never open a real connection — mark hardware tests
    `@pytest.mark.skip`). Add `examples/configs/<type>_device.toml`.
 
-No changes to `mcp_server.py` or `cli.py` are required.
+No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
 
 ---
 

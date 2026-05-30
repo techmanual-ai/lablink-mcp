@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import mcp_server
+import lablink.mcp_server as mcp_server
 from lablink import session as session_registry
 from lablink.base import Session
 from lablink.exceptions import ConfigError
@@ -38,7 +38,7 @@ def test_unknown_type_raises_listing_valid_types(tmp_path, monkeypatch):
 
 def test_connect_with_missing_deps_returns_install_hint(monkeypatch):
     config = VisaDriverConfig(alias="scope", type="visa", timeout_ms=5000, resource_string="USB0::INSTR")
-    monkeypatch.setattr("mcp_server.load_config", lambda alias: config)
+    monkeypatch.setattr("lablink.mcp_server.load_config", lambda alias: config)
     monkeypatch.setattr(
         VisaDriver, "check_python_deps", classmethod(lambda cls: [("pyvisa", False)])
     )
@@ -102,7 +102,7 @@ def test_diagnose_no_alias_enumerates_all_drivers():
 def test_register_cli_commands_gated_on_deps(monkeypatch):
     import click
 
-    import cli as cli_module
+    import lablink.cli as cli_module
 
     # deps present -> visa subgroup attached
     present_group = click.Group()

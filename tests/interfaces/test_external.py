@@ -159,7 +159,7 @@ class TestDeviceMemoryFallback:
     """Verify that do_connect surfaces tool_instructions when no .md file exists."""
 
     def test_tool_instructions_used_when_no_md_file(self, tmp_path, monkeypatch):
-        import mcp_server as srv
+        import lablink.mcp_server as srv
 
         monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
 
@@ -178,7 +178,7 @@ class TestDeviceMemoryFallback:
         assert result["device_memory"] == "Use saleae_start_capture."
 
     def test_md_file_takes_precedence_over_tool_instructions(self, tmp_path, monkeypatch):
-        import mcp_server as srv
+        import lablink.mcp_server as srv
 
         monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
 

@@ -29,7 +29,7 @@ from lablink.interfaces import DRIVER_REGISTRY
 # Shared lifecycle logic + the driver-instance accessor live in mcp_server so
 # the CLI reuses the exact same dispatch path as the MCP tools (importing it
 # does not start a FastMCP server).
-from mcp_server import (
+from lablink.mcp_server import (
     do_connect,
     do_diagnose,
     do_disconnect,

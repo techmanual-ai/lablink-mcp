@@ -290,7 +290,7 @@ are considered case-by-case as demand surfaces.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data models, driver
 contract, dispatch model, and a step-by-step guide to adding a new driver.
-Adding a driver requires no changes to `mcp_server.py` or `cli.py` — just a new
+Adding a driver requires no changes to `lablink/mcp_server.py` or `lablink/cli.py` — just a new
 `lablink/interfaces/<type>/` package and one line in each registry.
 
 ---
