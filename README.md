@@ -30,8 +30,7 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-> Pairs with [techmanual.ai](https://techmanual.ai) for agent-directed manual and SCPI
-> reference lookups — but neither product requires the other.
+<img src="docs/assets/banner.svg" alt="LabLink — one agent, every interface" width="100%">
 
 ---
 
@@ -44,8 +43,6 @@ LabLink gives an AI agent direct, structured access to lab hardware and services
 - **Install only what you need** — drivers are optional extras; the server runs with zero installed
 - **`diagnose()`** surfaces exactly what is missing or unreachable before the agent tries to use it
 - **Extensible** — add a driver with no changes to the core server or CLI
-
-<img src="docs/assets/banner.svg" alt="LabLink — one agent, every interface">
 
 ---
 
