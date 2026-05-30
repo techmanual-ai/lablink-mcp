@@ -1,12 +1,11 @@
-"""SSH driver — Paramiko-based remote command execution.
+"""SSH driver — Paramiko-based remote command execution and streaming.
 
 SshDriver subclasses LabLinkDriver[SshDriverConfig]. All paramiko imports are
 lazy — they happen inside methods, never at module load — so the package
 imports cleanly without the [ssh] extra installed.
 
-Phase 1 ships two tools: ssh_exec (non-interactive exec channel) and
-ssh_shell_session (per-call interactive PTY). Streaming (ssh_start_stream /
-ssh_stop_stream / ssh_read_stream) is deferred to Phase 1.5.
+Tools: ssh_exec, ssh_shell_session (Phase 1); ssh_start_stream,
+ssh_read_stream, ssh_stop_stream (Phase 1.5).
 """
 
 import importlib.util
@@ -15,6 +14,8 @@ import socket
 import time
 from dataclasses import asdict
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any, Optional
 
 from lablink import session as session_registry
@@ -66,6 +67,39 @@ def _drain_channel(chan: Any, quiet_timeout_s: float) -> str:
         except Exception:
             break
     return buf
+
+
+def _stream_worker(channel: Any, buffer: Queue, metadata: dict) -> None:
+    """Background thread: read chunks from an SSH exec channel into a bounded queue.
+
+    Puts decoded string chunks into buffer. On EOF or error, puts a None
+    sentinel so readers know the stream has ended. Overflow policy: drop the
+    oldest chunk before inserting the new one (bounded at maxsize=1000).
+    """
+    try:
+        while True:
+            if channel.exit_status_ready() and not channel.recv_ready():
+                break
+            if channel.recv_ready():
+                chunk = channel.recv(4096)
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                if buffer.full():
+                    try:
+                        buffer.get_nowait()
+                    except Empty:
+                        pass
+                buffer.put_nowait(text)
+            else:
+                time.sleep(0.05)
+    except Exception as exc:
+        metadata["stream_error"] = str(exc)
+    finally:
+        try:
+            buffer.put_nowait(None)  # EOF sentinel
+        except Exception:
+            pass
 
 
 class SshDriver(LabLinkDriver[SshDriverConfig]):
@@ -202,6 +236,18 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
         )
 
     def disconnect(self, session: Session[SshDriverConfig]) -> Result:
+        # Tear down any active stream before closing the SSH connection.
+        if session.buffer_thread is not None:
+            channel = session.metadata.get("stream_channel")
+            if channel is not None:
+                try:
+                    channel.close()
+                except Exception:
+                    pass
+            session.buffer_thread.join(timeout=2.0)
+            session.buffer_thread = None
+            session.buffer = None
+
         try:
             session.raw.close()
         except Exception as exc:
@@ -339,6 +385,167 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
         log_event(op="ssh_shell_session", alias=alias, cmd_count=len(commands), success=True)
         return asdict(result)
 
+    def ssh_start_stream_impl(self, alias: str, command: str) -> dict:
+        lookup = session_registry.lookup(alias, expected_type="ssh")
+        if not lookup.found:
+            result = self._no_session_result(alias, lookup)
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            return asdict(result)
+
+        session = lookup.session
+
+        if session.buffer_thread is not None and session.buffer_thread.is_alive():
+            result = ReadResult(
+                success=False,
+                error=f"A stream is already active for '{alias}'.",
+                hint="Call ssh_stop_stream(alias) to terminate it before starting a new one.",
+            )
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            return asdict(result)
+
+        try:
+            _stdin, stdout, _stderr = session.raw.exec_command(command)
+            channel = stdout.channel
+        except Exception as exc:
+            result = ReadResult(
+                success=False,
+                error=f"Failed to start stream: {exc}",
+                hint="Check that the session is still open and the command is valid.",
+            )
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            return asdict(result)
+
+        buf: Queue = Queue(maxsize=1000)
+        session.buffer = buf
+        session.metadata["stream_channel"] = channel
+        session.metadata.pop("stream_error", None)
+
+        thread = Thread(
+            target=_stream_worker,
+            args=(channel, buf, session.metadata),
+            daemon=True,
+            name=f"lablink-ssh-stream-{alias}",
+        )
+        session.buffer_thread = thread
+        thread.start()
+
+        log_event(op="ssh_start_stream", alias=alias, command=command, success=True)
+        return asdict(Result(success=True))
+
+    def ssh_read_stream_impl(self, alias: str, timeout_ms: Optional[int] = None) -> dict:
+        lookup = session_registry.lookup(alias, expected_type="ssh")
+        if not lookup.found:
+            result = self._no_session_result(alias, lookup)
+            log_event(op="ssh_read_stream", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        session = lookup.session
+
+        # §6.5 rule 4: check None before is_alive to avoid AttributeError
+        if session.buffer_thread is None:
+            result = ReadResult(
+                success=False,
+                error=f"No active stream for '{alias}'.",
+                hint="Call ssh_start_stream(alias, command) first.",
+            )
+            log_event(op="ssh_read_stream", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        if not session.buffer_thread.is_alive() and "stream_error" in session.metadata:
+            err = session.metadata["stream_error"]
+            result = ReadResult(
+                success=False,
+                error=f"Stream thread died: {err}",
+                hint="Call disconnect() and reconnect to restart the session.",
+            )
+            log_event(op="ssh_read_stream", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        # Drain all available chunks without blocking
+        chunks: list[str] = []
+        stream_ended = False
+        while True:
+            try:
+                item = session.buffer.get_nowait()
+                if item is None:
+                    stream_ended = True
+                    break
+                chunks.append(item)
+            except Empty:
+                break
+
+        combined = "".join(chunks)
+        if not combined and not stream_ended:
+            result = ReadResult(success=True, raw=None, timed_out=True, format="text")
+            log_event(op="ssh_read_stream", alias=alias, bytes_read=0, success=True)
+            return asdict(result)
+
+        result = ReadResult(
+            success=True,
+            raw=combined,
+            format="text",
+            metadata={"stream_ended": stream_ended},
+        )
+        log_event(op="ssh_read_stream", alias=alias, bytes_read=len(combined), success=True)
+        return asdict(result)
+
+    def ssh_stop_stream_impl(self, alias: str) -> dict:
+        lookup = session_registry.lookup(alias, expected_type="ssh")
+        if not lookup.found:
+            result = self._no_session_result(alias, lookup)
+            log_event(op="ssh_stop_stream", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        session = lookup.session
+
+        if session.buffer_thread is None:
+            result = ReadResult(
+                success=False,
+                error=f"No active stream for '{alias}'.",
+                hint="Call ssh_start_stream(alias, command) first.",
+            )
+            log_event(op="ssh_stop_stream", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        # Close channel to signal the worker thread to exit
+        channel = session.metadata.get("stream_channel")
+        if channel is not None:
+            try:
+                channel.close()
+            except Exception:
+                pass
+
+        # Join with 2s timeout per §6.5 rule 3
+        session.buffer_thread.join(timeout=2.0)
+        thread_clean = not session.buffer_thread.is_alive()
+
+        # Drain any remaining buffered output
+        chunks: list[str] = []
+        while True:
+            try:
+                item = session.buffer.get_nowait()
+                if item is None:
+                    break
+                chunks.append(item)
+            except Empty:
+                break
+
+        final_transcript = "".join(chunks)
+
+        # Reset streaming state so a new stream can start
+        session.buffer_thread = None
+        session.buffer = None
+        session.metadata.pop("stream_channel", None)
+        session.metadata.pop("stream_error", None)
+
+        meta: dict = {}
+        if not thread_clean:
+            meta["warning"] = "Stream thread did not exit cleanly within 2s."
+
+        result = ReadResult(success=True, raw=final_transcript, format="text", metadata=meta)
+        log_event(op="ssh_stop_stream", alias=alias, bytes_read=len(final_transcript), success=True)
+        return asdict(result)
+
     @staticmethod
     def _no_session_result(
         alias: str, lookup: "session_registry.SessionLookup"
@@ -419,6 +626,79 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                     the transcript for error indicators.
             """
             return driver.ssh_shell_session_impl(alias, commands, timeout_ms)
+
+        @mcp.tool()
+        def ssh_start_stream(alias: str, command: str) -> dict:
+            """Start a long-lived SSH command and buffer its stdout in the background.
+
+            Spawns a background thread that runs command via an exec channel and
+            continuously buffers stdout into a bounded queue (capacity 1000 chunks,
+            drop-oldest on overflow). Returns immediately with an acknowledgement —
+            output is collected asynchronously. Read buffered output with
+            ssh_read_stream; terminate with ssh_stop_stream. Only one stream per
+            alias is allowed at a time.
+
+            Use for commands that produce continuous output: "tail -f /var/log/syslog",
+            "journalctl -f", "ping host", long-running scripts. For commands with
+            defined exit behavior, prefer ssh_exec — it blocks until exit and returns
+            a clean exit code.
+
+            Args:
+                alias: Configured device alias (must be an SSH-type alias).
+                command: Long-lived shell command that produces continuous output.
+
+            Returns a Result dict:
+                success: True when the stream was started. False if no session is
+                    open, a stream is already active, or exec_command failed.
+            """
+            return driver.ssh_start_stream_impl(alias, command)
+
+        @mcp.tool()
+        def ssh_read_stream(alias: str, timeout_ms: int | None = None) -> dict:
+            """Drain buffered output from an active SSH stream.
+
+            Returns all chunks currently in the buffer as a single string. Non-blocking
+            — if the buffer is empty, raw=None and timed_out=True (nothing yet, try
+            again). Poll at 500ms–2s intervals for typical log tails.
+
+            Buffer overflow policy: if the producer outpaces the reader, the oldest
+            chunks are silently dropped. Read frequently enough to keep up.
+
+            Args:
+                alias: Configured device alias (must be an SSH-type alias).
+                timeout_ms: Reserved for future use; reads are non-blocking regardless.
+
+            Returns a ReadResult dict:
+                raw: Concatenated buffered output since the last read, or None when
+                    the buffer was empty.
+                timed_out: True when raw is None and the stream is still alive (no
+                    data yet, try again).
+                metadata: {"stream_ended": bool} — True when the remote command has
+                    exited and no more data will arrive. Call ssh_stop_stream to
+                    release the channel even after stream_ended is True.
+                success: False if no session exists, no stream is active, or the
+                    stream thread died unexpectedly (check error for details).
+            """
+            return driver.ssh_read_stream_impl(alias, timeout_ms)
+
+        @mcp.tool()
+        def ssh_stop_stream(alias: str) -> dict:
+            """Terminate an active SSH stream and return any remaining buffered output.
+
+            Closes the exec channel (signalling the remote process), waits up to 2
+            seconds for the background thread to exit cleanly, drains the buffer,
+            and resets streaming state. Always call this when done — even if the
+            stream already ended — so a new stream can start on the same session.
+
+            Args:
+                alias: Configured device alias (must be an SSH-type alias).
+
+            Returns a ReadResult dict:
+                raw: Any output buffered since the last ssh_read_stream call.
+                metadata: {"warning": "..."} if the thread did not exit within 2s.
+                success: False if no session is open or no stream was active.
+            """
+            return driver.ssh_stop_stream_impl(alias)
 
     def register_cli_commands(self, cli_group) -> None:
         import sys

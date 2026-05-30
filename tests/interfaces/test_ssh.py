@@ -7,6 +7,9 @@ SSHClient is replaced with our mock. Exception classes remain real so
 except-clause matching works correctly.
 """
 
+import time
+from queue import Queue
+from threading import Thread
 from unittest.mock import MagicMock, patch
 
 import paramiko
@@ -403,3 +406,406 @@ class TestSystemDepCheck:
     def test_no_system_deps(self):
         # SSH has no OS-level deps (unlike VISA which needs libusb)
         assert SshDriver.system_dep_check() == []
+
+
+# ---------------------------------------------------------------------------
+# Streaming helpers
+# ---------------------------------------------------------------------------
+
+
+def _stream_session(*, recv_ready_seq=None, recv_data=b"", exit_ready=True) -> MagicMock:
+    """Register a session with a mock channel configured for streaming tests."""
+    client = _mock_client()
+    channel = MagicMock()
+    stdout = MagicMock()
+    stdout.channel = channel
+    client.exec_command.return_value = (MagicMock(), stdout, MagicMock())
+
+    if recv_ready_seq is not None:
+        channel.recv_ready.side_effect = recv_ready_seq
+    else:
+        channel.recv_ready.return_value = False
+    channel.exit_status_ready.return_value = exit_ready
+    channel.recv.return_value = recv_data
+
+    _register_session(client, _config())
+    return client
+
+
+def _session_obj() -> Session:
+    return session_registry.get_any("test_pi")
+
+
+# ---------------------------------------------------------------------------
+# ssh_start_stream_impl
+# ---------------------------------------------------------------------------
+
+
+class TestSshStartStream:
+    def test_success_sets_buffer_and_thread(self):
+        _stream_session()
+        driver = SshDriver()
+
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /var/log/syslog")
+
+        assert result["success"] is True
+        sess = _session_obj()
+        assert sess.buffer is not None
+        assert sess.buffer_thread is not None
+        assert sess.metadata.get("stream_channel") is not None
+
+    def test_no_session_returns_error(self):
+        driver = SshDriver()
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /log")
+        assert result["success"] is False
+        assert "No open session" in result["error"]
+
+    def test_wrong_type_session_returns_error(self):
+        visa_session = Session(
+            alias="test_pi", interface_type="visa", raw=MagicMock(), config=MagicMock()
+        )
+        session_registry.register(visa_session)
+        driver = SshDriver()
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /log")
+        assert result["success"] is False
+        assert "visa" in result["error"]
+
+    def test_already_streaming_returns_error(self):
+        _stream_session()
+        sess = _session_obj()
+        alive_thread = MagicMock(spec=Thread)
+        alive_thread.is_alive.return_value = True
+        sess.buffer_thread = alive_thread
+        driver = SshDriver()
+
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /log")
+
+        assert result["success"] is False
+        assert "already active" in result["error"]
+
+    def test_exec_command_failure_returns_error(self):
+        client = _mock_client()
+        client.exec_command.side_effect = Exception("transport closed")
+        _register_session(client, _config())
+        driver = SshDriver()
+
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /log")
+
+        assert result["success"] is False
+        assert "Failed to start stream" in result["error"]
+
+    def test_dead_prior_thread_allows_new_stream(self):
+        """A finished (not alive) prior thread does not block a new stream."""
+        _stream_session()
+        sess = _session_obj()
+        dead_thread = MagicMock(spec=Thread)
+        dead_thread.is_alive.return_value = False
+        sess.buffer_thread = dead_thread
+        driver = SshDriver()
+
+        result = driver.ssh_start_stream_impl("test_pi", "tail -f /log")
+        assert result["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# ssh_read_stream_impl
+# ---------------------------------------------------------------------------
+
+
+class TestSshReadStream:
+    def _preloaded_session(self, items: list) -> Session:
+        """Register a session with a pre-populated buffer queue."""
+        _stream_session()
+        sess = _session_obj()
+        buf: Queue = Queue(maxsize=1000)
+        for item in items:
+            buf.put_nowait(item)
+        thread = MagicMock(spec=Thread)
+        thread.is_alive.return_value = True
+        sess.buffer = buf
+        sess.buffer_thread = thread
+        return sess
+
+    def test_no_session_returns_error(self):
+        driver = SshDriver()
+        result = driver.ssh_read_stream_impl("test_pi")
+        assert result["success"] is False
+        assert "No open session" in result["error"]
+
+    def test_no_stream_returns_error(self):
+        _stream_session()
+        # buffer_thread is None by default on a freshly registered session
+        driver = SshDriver()
+        result = driver.ssh_read_stream_impl("test_pi")
+        assert result["success"] is False
+        assert "No active stream" in result["error"]
+
+    def test_dead_thread_with_error_returns_failure(self):
+        _stream_session()
+        sess = _session_obj()
+        dead_thread = MagicMock(spec=Thread)
+        dead_thread.is_alive.return_value = False
+        sess.buffer_thread = dead_thread
+        sess.buffer = Queue()
+        sess.metadata["stream_error"] = "recv failed"
+        driver = SshDriver()
+
+        result = driver.ssh_read_stream_impl("test_pi")
+
+        assert result["success"] is False
+        assert "Stream thread died" in result["error"]
+        assert "recv failed" in result["error"]
+
+    def test_returns_buffered_chunks(self):
+        self._preloaded_session(["line1\n", "line2\n", "line3\n"])
+        driver = SshDriver()
+
+        result = driver.ssh_read_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] == "line1\nline2\nline3\n"
+        assert result["timed_out"] is False
+
+    def test_empty_buffer_returns_timed_out(self):
+        self._preloaded_session([])
+        driver = SshDriver()
+
+        result = driver.ssh_read_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] is None
+        assert result["timed_out"] is True
+
+    def test_none_sentinel_sets_stream_ended(self):
+        """None sentinel in buffer indicates remote command exited."""
+        self._preloaded_session(["final line\n", None])
+        driver = SshDriver()
+
+        result = driver.ssh_read_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] == "final line\n"
+        assert result["metadata"]["stream_ended"] is True
+
+    def test_only_sentinel_sets_stream_ended_empty_raw(self):
+        self._preloaded_session([None])
+        driver = SshDriver()
+
+        result = driver.ssh_read_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] == ""
+        assert result["metadata"]["stream_ended"] is True
+
+
+# ---------------------------------------------------------------------------
+# ssh_stop_stream_impl
+# ---------------------------------------------------------------------------
+
+
+class TestSshStopStream:
+    def _streaming_session(self, buffered: list | None = None) -> Session:
+        """Register a session that looks like it has an active stream."""
+        _stream_session()
+        sess = _session_obj()
+        buf: Queue = Queue(maxsize=1000)
+        for item in buffered or []:
+            buf.put_nowait(item)
+        thread = MagicMock(spec=Thread)
+        thread.is_alive.return_value = False  # exits cleanly after join
+        sess.buffer = buf
+        sess.buffer_thread = thread
+        sess.metadata["stream_channel"] = MagicMock()
+        return sess
+
+    def test_no_session_returns_error(self):
+        driver = SshDriver()
+        result = driver.ssh_stop_stream_impl("test_pi")
+        assert result["success"] is False
+        assert "No open session" in result["error"]
+
+    def test_no_stream_returns_error(self):
+        _stream_session()
+        driver = SshDriver()
+        result = driver.ssh_stop_stream_impl("test_pi")
+        assert result["success"] is False
+        assert "No active stream" in result["error"]
+
+    def test_success_returns_remaining_transcript(self):
+        sess = self._streaming_session(buffered=["part1\n", "part2\n"])
+        driver = SshDriver()
+
+        result = driver.ssh_stop_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] == "part1\npart2\n"
+        assert "warning" not in result["metadata"]
+
+    def test_empty_buffer_returns_empty_raw(self):
+        self._streaming_session(buffered=[])
+        driver = SshDriver()
+
+        result = driver.ssh_stop_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert result["raw"] == ""
+
+    def test_clears_streaming_state(self):
+        sess = self._streaming_session()
+        driver = SshDriver()
+
+        driver.ssh_stop_stream_impl("test_pi")
+
+        assert sess.buffer_thread is None
+        assert sess.buffer is None
+        assert "stream_channel" not in sess.metadata
+
+    def test_closes_channel(self):
+        sess = self._streaming_session()
+        channel = sess.metadata["stream_channel"]
+        driver = SshDriver()
+
+        driver.ssh_stop_stream_impl("test_pi")
+
+        channel.close.assert_called_once()
+
+    def test_thread_join_timeout_adds_warning(self):
+        """Thread still alive after join → warning in metadata."""
+        self._streaming_session()
+        sess = _session_obj()
+        sess.buffer_thread.is_alive.return_value = True  # still alive after join
+        driver = SshDriver()
+
+        result = driver.ssh_stop_stream_impl("test_pi")
+
+        assert result["success"] is True
+        assert "warning" in result["metadata"]
+
+    def test_none_sentinel_in_buffer_handled(self):
+        self._streaming_session(buffered=["chunk\n", None])
+        driver = SshDriver()
+
+        result = driver.ssh_stop_stream_impl("test_pi")
+
+        assert result["raw"] == "chunk\n"
+
+
+# ---------------------------------------------------------------------------
+# disconnect with active stream
+# ---------------------------------------------------------------------------
+
+
+class TestDisconnectWithStream:
+    def test_disconnect_joins_thread_and_closes_channel(self):
+        """disconnect() tears down an active stream before closing the SSH connection."""
+        client = _mock_client()
+        sess = _register_session(client, _config())
+        channel = MagicMock()
+        thread = MagicMock(spec=Thread)
+        thread.is_alive.return_value = False
+        sess.buffer_thread = thread
+        sess.buffer = Queue()
+        sess.metadata["stream_channel"] = channel
+        driver = SshDriver()
+
+        result = driver.disconnect(sess)
+
+        assert result.success is True
+        channel.close.assert_called_once()
+        thread.join.assert_called_once_with(timeout=2.0)
+        client.close.assert_called_once()
+
+    def test_disconnect_clears_stream_state(self):
+        client = _mock_client()
+        sess = _register_session(client, _config())
+        thread = MagicMock(spec=Thread)
+        thread.is_alive.return_value = False
+        sess.buffer_thread = thread
+        sess.buffer = Queue()
+        driver = SshDriver()
+
+        driver.disconnect(sess)
+
+        assert sess.buffer_thread is None
+        assert sess.buffer is None
+
+    def test_disconnect_no_stream_unaffected(self):
+        """disconnect() with no active stream still closes the connection cleanly."""
+        client = _mock_client()
+        sess = _register_session(client, _config())
+        driver = SshDriver()
+
+        result = driver.disconnect(sess)
+
+        assert result.success is True
+        client.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _stream_worker integration (real thread, mock channel)
+# ---------------------------------------------------------------------------
+
+
+class TestStreamWorker:
+    def test_worker_puts_chunks_then_sentinel(self):
+        from lablink.interfaces.ssh.driver import _stream_worker
+
+        channel = MagicMock()
+        channel.exit_status_ready.return_value = False
+        # Produce one chunk, then EOF
+        channel.recv_ready.side_effect = [True, True, False]
+        channel.recv.side_effect = [b"hello\n", b""]
+
+        buf: Queue = Queue(maxsize=1000)
+        metadata: dict = {}
+
+        thread = Thread(target=_stream_worker, args=(channel, buf, metadata))
+        thread.start()
+        thread.join(timeout=3.0)
+
+        items = []
+        while not buf.empty():
+            items.append(buf.get_nowait())
+
+        assert items[0] == "hello\n"
+        assert items[-1] is None  # EOF sentinel
+
+    def test_worker_sets_stream_error_on_exception(self):
+        from lablink.interfaces.ssh.driver import _stream_worker
+
+        channel = MagicMock()
+        channel.exit_status_ready.side_effect = RuntimeError("boom")
+
+        buf: Queue = Queue(maxsize=1000)
+        metadata: dict = {}
+
+        thread = Thread(target=_stream_worker, args=(channel, buf, metadata))
+        thread.start()
+        thread.join(timeout=3.0)
+
+        assert "stream_error" in metadata
+        assert "boom" in metadata["stream_error"]
+        # sentinel still put despite exception
+        assert buf.get_nowait() is None
+
+    def test_worker_drop_oldest_on_overflow(self):
+        from lablink.interfaces.ssh.driver import _stream_worker
+
+        channel = MagicMock()
+        channel.exit_status_ready.return_value = False
+
+        num_chunks = 1002  # 2 more than maxsize=1000
+        ready = [True] * num_chunks + [True]
+        channel.recv_ready.side_effect = ready
+        chunks = [f"line{i}\n".encode() for i in range(num_chunks)] + [b""]
+        channel.recv.side_effect = chunks
+
+        buf: Queue = Queue(maxsize=1000)
+        metadata: dict = {}
+
+        thread = Thread(target=_stream_worker, args=(channel, buf, metadata))
+        thread.start()
+        thread.join(timeout=5.0)
+
+        # Buffer should not exceed maxsize + 1 (sentinel)
+        assert buf.qsize() <= 1001

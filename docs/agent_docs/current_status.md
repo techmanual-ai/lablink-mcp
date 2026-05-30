@@ -1,10 +1,10 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 4 Complete — python_shell driver shipped (VISA + SSH + REST + Serial + python_shell + external)**
+**LabLink Phase 1.5 Complete — SSH streaming shipped (VISA + SSH + REST + Serial + python_shell + external)**
 
-Phase 1.5 (SSH streaming) deprioritized; held as a tech-debug item per
-developer direction. Phase 2 (REST driver) shipped ahead of it.
+All v1 drivers shipped. Phase 1.5 (SSH streaming) completed 2026-05-29,
+ratifying the §6.5 streaming contract.
 
 Phase 0c finished the peripheral cleanup on top of the 0b core; all of Phase 0
 (migration, architectural core, cleanup) is now done. The codebase is a
@@ -41,7 +41,7 @@ external as the current drivers:
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**250/250 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST + 4 Serial + 2 python_shell.
+**277/277 tests pass.** Tool surface: 4 shared + 2 VISA + 5 SSH + 5 REST + 4 Serial + 2 python_shell.
 All phase exit gates are MET; the VISA path was validated end-to-end on the real
 Siglent SDS1104X-E. SSH and REST validated by unit tests. Serial validated by unit
 tests. python_shell validated by 50 tests including 7 real-subprocess integration
@@ -51,8 +51,8 @@ persistence, stdout capture, shutdown) against the current Python interpreter.
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**All v1 drivers are shipped.** Phase 1.5 (SSH streaming) deprioritized as a
-tech-debug item. Post-v1 scope: streaming drivers, async dispatch, PyPI publish.
+**All v1 drivers are shipped. Phase 1.5 complete.** Post-v1 scope: async
+dispatch, additional streaming drivers (MQTT/WebSocket per §6.5), PyPI publish.
 
 ---
 
@@ -112,6 +112,26 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 1.5 Complete]** SSH streaming shipped. Added three
+  tools to `SshDriver`: `ssh_start_stream(alias, command)` (runs a long-lived
+  exec channel; background thread buffers stdout into a bounded `Queue(maxsize=1000)`
+  with drop-oldest overflow; returns `Result(success=True)` immediately),
+  `ssh_read_stream(alias, timeout_ms?)` (non-blocking drain; returns concatenated
+  chunks in `raw`; `timed_out=True` when buffer empty and stream alive;
+  `metadata={"stream_ended": bool}`), `ssh_stop_stream(alias)` (closes channel,
+  `join(timeout=2.0)`, drains remainder into `raw`; `metadata={"warning": ...}`
+  if thread did not exit cleanly). `disconnect()` updated to tear down any active
+  stream (close channel → join 2s → clear `buffer_thread`/`buffer`) before
+  closing the SSH connection. `_stream_worker` is a module-level daemon thread
+  function; sets `session.metadata["stream_error"]` on exception; always puts
+  `None` sentinel. §6.5 contract validated — rules held up without change.
+  27 new tests (start/read/stop/disconnect/worker integration); 277/277 pass.
+  Hardware smoke test: ✓ validated on `rpi_dev` (RPi 4, Debian 13). Tailed the
+  live rtl_433 capture log (`tail -f ~/rtl433_captures/sniff_YYYY-MM-DD.json`);
+  received 3 RF decode events on first read, `timed_out=True` on second read
+  (empty buffer, stream alive), clean stop with no warning. All Phase 1.5 exit
+  gate criteria met.
 
 - **2026-05-29** — **[Phase 4 Complete]** python_shell driver shipped. Added
   `lablink/interfaces/python_shell/` with `PythonShellDriverConfig(DriverConfig)`,

@@ -890,9 +890,9 @@ This avoids per-driver duplication and ensures memory-loading semantics (path re
 
 The contract is intentionally loose. The four required fields are the only ones every consumer (the agent, debug tooling, the user inspecting logs) can rely on. Everything else is per-tool best-effort. Drivers must not pass `response`/`command`/etc. fields that would not make sense for their protocol (e.g., REST has no `command` — it has `verb` + `path` + `body`).
 
-### 6.5 Streaming Lifecycle Contract (Provisional)
+### 6.5 Streaming Lifecycle Contract
 
-> **Status: provisional.** v1 ships zero streaming drivers, so none of these rules has been validated against real hardware. They are the best-guess starting point for the first streaming driver author. **Phase 1.5 (SSH streaming) ratifies the final contract.** Expect revisions to this section when Phase 1.5 lands and surfaces gaps. Until then, treat the rules below as strong guidance rather than locked contract — a Phase 1.5 author who finds a rule wrong should propose an edit to this section rather than work around it.
+> **Status: ratified (2026-05-29).** Phase 1.5 (SSH streaming) landed and validated all five rules below without requiring changes. The contract is now locked. Future streaming drivers must follow it; deviations require a plan revision with rationale.
 
 `Session.buffer` and `Session.buffer_thread` exist for forward compatibility. Future streaming drivers should follow these five rules:
 
@@ -919,7 +919,7 @@ The contract is intentionally loose. The four required fields are the only ones 
 
 5. **Read tool batching is per-driver but should be documented.** Each driver's `*_read_stream` (or equivalent) tool documents whether it returns one item per call, a drained batch, or up to N items. `ReadResult.raw` is typed `str | bytes | list | None` to accommodate batch returns. The driver's docstring is the source of truth — there is no single uniform answer.
 
-**Re-ratification at Phase 1.5 exit gate:** when SSH streaming lands, this section is re-reviewed against what actually worked. Rules that survived become locked (MUST language reinstated); rules that didn't get rewritten or removed. Until then, this section is a forward-compat sketch, not a binding contract.
+**Re-ratification at Phase 1.5 exit gate:** ✓ complete (2026-05-29). All five rules held without change against the SSH streaming implementation. MUST language applies to all future streaming drivers.
 
 ---
 
@@ -1196,10 +1196,8 @@ Lifecycle:
 
 Dependencies: `paramiko`
 
-### Phase 1.5 — SSH Streaming
+### Phase 1.5 — SSH Streaming ✓ Complete (2026-05-29)
 **Goal:** First streaming driver. Validates the §6.5 contract.
-
-Gated on real-world Phase 1 feedback. Do not start until SSH-exec has seen real usage (or until the developer explicitly requests it). The streaming contract may need revision based on what Phase 1 reveals.
 
 Tools added in Phase 1.5:
 - `ssh_start_stream(alias, command)` — run a long-lived command; background thread buffers stdout into `session.buffer` per §6.5.
