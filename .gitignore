@@ -36,6 +36,9 @@ htmlcov/
 # macOS
 .DS_Store
 
+# Claude Code local config
+.claude/
+
 # Device configs (user-local, not for version control)
 # ~/.lablink/ lives outside the repo, but guard against accidents
 *.toml.local
