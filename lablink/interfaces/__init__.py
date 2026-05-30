@@ -9,6 +9,7 @@ drift.
 
 from lablink.base import DriverConfig, LabLinkDriver
 from lablink.interfaces.external_mcp import ExternalMcpDriver, ExternalMcpDriverConfig
+from lablink.interfaces.python_shell import PythonShellDriver, PythonShellDriverConfig
 from lablink.interfaces.rest import RestDriver, RestDriverConfig
 from lablink.interfaces.serial import SerialDriver, SerialDriverConfig
 from lablink.interfaces.ssh import SshDriver, SshDriverConfig
@@ -19,6 +20,7 @@ DRIVER_REGISTRY: dict[str, type[LabLinkDriver]] = {
     "ssh": SshDriver,
     "rest": RestDriver,
     "serial": SerialDriver,
+    "python_shell": PythonShellDriver,
     "external_mcp": ExternalMcpDriver,
 }
 
@@ -27,6 +29,7 @@ DRIVER_CONFIG_REGISTRY: dict[str, type[DriverConfig]] = {
     "ssh": SshDriverConfig,
     "rest": RestDriverConfig,
     "serial": SerialDriverConfig,
+    "python_shell": PythonShellDriverConfig,
     "external_mcp": ExternalMcpDriverConfig,
 }
 

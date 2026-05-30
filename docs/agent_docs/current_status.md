@@ -1,15 +1,15 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 3 Complete — Serial driver shipped (VISA + SSH + REST + Serial + external)**
+**LabLink Phase 4 Complete — python_shell driver shipped (VISA + SSH + REST + Serial + python_shell + external)**
 
 Phase 1.5 (SSH streaming) deprioritized; held as a tech-debug item per
 developer direction. Phase 2 (REST driver) shipped ahead of it.
 
 Phase 0c finished the peripheral cleanup on top of the 0b core; all of Phase 0
 (migration, architectural core, cleanup) is now done. The codebase is a
-multi-driver dispatch system with VISA, SSH, REST, and external as the current
-drivers:
+multi-driver dispatch system with VISA, SSH, REST, Serial, python_shell, and
+external as the current drivers:
 - `lablink/base.py` — data models, config dataclasses (`DriverConfig` +
   `AuthConfig`/`DocumentedConfig` mixins, all `kw_only=True`),
   `Session[ConfigT]`, the `LabLinkDriver[ConfigT]` ABC.
@@ -27,22 +27,32 @@ drivers:
   the `lablink serial query/write ...` CLI subgroup. `SerialDriverConfig(DriverConfig)`;
   no auth mixin (serial is inherently local/physical). Covers RS232/RS422/RS485
   via pyserial; parity (`none/even/odd/mark/space`) and termination are config fields.
+- python_shell in `lablink/interfaces/python_shell/` on the ABC; self-registers
+  `python_shell_exec` / `python_shell_eval` (tools) and the
+  `lablink python-shell exec/eval ...` CLI subgroup. `PythonShellDriverConfig(DriverConfig)`;
+  no auth mixin (no network layer). Spawns a persistent subprocess running the
+  user's interpreter (`python_path`) with `bootstrap.py` as the JSONL wire-protocol
+  REPL. State (namespace) persists across calls within a session. No Python extras
+  required (stdlib only); `check_python_deps()` returns `[]`. Handles: busy-flag
+  serialisation, timeout-with-recovery, subprocess-crash detection, 8 MB output
+  truncation, shutdown sequence (shutdown request → 2s wait → SIGTERM → SIGKILL).
 - Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
   in `mcp_server.py` dispatch via `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY`.
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**200/200 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST + 4 Serial. Both the 0b
-and 0c exit gates are MET (see `implementation_log.md`); the VISA path was
-validated end-to-end on the real Siglent SDS1104X-E. SSH and REST validated by
-unit tests. Serial validated by unit tests (no hardware required; pyserial mocked
-via `patch("serial.Serial")`).
+**250/250 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST + 4 Serial + 2 python_shell.
+All phase exit gates are MET; the VISA path was validated end-to-end on the real
+Siglent SDS1104X-E. SSH and REST validated by unit tests. Serial validated by unit
+tests. python_shell validated by 50 tests including 7 real-subprocess integration
+tests that exercise the bootstrap wire protocol (exec, eval, exception, namespace
+persistence, stdout capture, shutdown) against the current Python interpreter.
 
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Next phase: Phase 4 (python_shell).** Phase 1.5 (SSH streaming) deprioritized
-as a tech-debug item.
+**All v1 drivers are shipped.** Phase 1.5 (SSH streaming) deprioritized as a
+tech-debug item. Post-v1 scope: streaming drivers, async dispatch, PyPI publish.
 
 ---
 
@@ -57,6 +67,7 @@ as a tech-debug item.
 - `lablink/interfaces/ssh/` — `SshDriver` + `SshDriverConfig`
 - `lablink/interfaces/rest/` — `RestDriver` + `RestDriverConfig(DriverConfig, AuthConfig)`
 - `lablink/interfaces/serial/` — `SerialDriver` + `SerialDriverConfig(DriverConfig)`
+- `lablink/interfaces/python_shell/` — `PythonShellDriver` + `PythonShellDriverConfig(DriverConfig)` + `bootstrap.py`
 - `lablink/event_logger.py` — JSONL event log; §6.4 canonical-field contract
 - `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
 - `cli.py` — shared subcommands + per-driver subgroups (`lablink visa ...`); `lablink`
@@ -101,6 +112,25 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 4 Complete]** python_shell driver shipped. Added
+  `lablink/interfaces/python_shell/` with `PythonShellDriverConfig(DriverConfig)`,
+  `PythonShellDriver` implementing the full `LabLinkDriver[PythonShellDriverConfig]`
+  ABC, and `bootstrap.py` (the JSONL wire-protocol REPL that runs inside the
+  user's interpreter subprocess). Tools: `python_shell_exec` (run a code block;
+  captures stdout/stderr; returns traceback on exception with `success=True`),
+  `python_shell_eval` (evaluate a single expression; returns `repr(value)`).
+  Subprocess lifecycle: connect spawns `python -u bootstrap.py`, waits for READY
+  handshake (10s timeout), stores `busy` + `req_counter` in session metadata;
+  disconnect sends `{"op":"shutdown"}` → wait 2s → SIGTERM → SIGKILL. Timeout
+  returns `timed_out=True`, `busy` stays `True` (subprocess still running);
+  BrokenPipeError/EOF returns `success=False` and clears `busy`. Wire protocol:
+  newline-delimited JSON, 8 MB combined stdout+stderr soft limit with truncation
+  flag. No Python extras required (stdlib only); `check_python_deps()` = `[]`;
+  tools always registered. CLI: `lablink python-shell exec/eval <alias> "<code>"`.
+  pyproject: added `[python_shell] = []` extra; updated `[all]`. 50 new tests
+  (43 unit + 7 real-subprocess bootstrap integration); 250/250 pass. Added
+  `examples/configs/python_shell_env.toml`. All v1 drivers are now shipped.
 
 - **2026-05-29** — **[Phase 3 Complete]** Serial driver shipped. Added
   `lablink/interfaces/serial/` with `SerialDriverConfig(DriverConfig)` and

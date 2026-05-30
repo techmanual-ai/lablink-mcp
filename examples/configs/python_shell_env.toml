@@ -1,0 +1,15 @@
+# python_shell driver example config
+# Spawn a persistent Python subprocess in a user-managed environment.
+# Any vendor SDK installed in that environment (nidaqmx, picosdk, etc.)
+# becomes accessible to the agent via python_shell_exec / python_shell_eval.
+#
+# python_path is tilde-expanded at load time.
+# working_dir is optional; leave it out to inherit the LabLink server's cwd.
+
+type        = "python_shell"
+alias       = "lab_env"
+timeout_ms  = 30000
+description = "Lab Python environment with vendor SDKs"
+
+python_path = "~/miniconda3/envs/labwork/bin/python"
+# working_dir = "/Users/me/projects/lab"
