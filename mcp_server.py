@@ -3,7 +3,7 @@
 Installed as the 'lablink-mcp' console script via pip install.
 Configure in your MCP client as: {"command": "lablink-mcp"}
 
-Architecture (lablink_plan.md §2.2, §4.1):
+Architecture (docs/ARCHITECTURE.md §2, §6.1):
   - Shared lifecycle tools (connect, disconnect, list_devices, diagnose) are
     defined here and dispatch to the owning driver via DRIVER_REGISTRY.
   - Per-driver operation tools (visa_query, ...) self-register via each
@@ -26,7 +26,6 @@ from lablink.config import (
     get_config_dir,
     load_config,
     load_device_memory,
-    maybe_migrate_legacy_configs,
 )
 from lablink.exceptions import ConfigError
 from lablink.interfaces import DRIVER_REGISTRY
@@ -78,7 +77,7 @@ diagnose before asking the user.
 connect() returns a `device_memory` field: the content of
 ~/.lablink/devices/<alias>.md, where prior agents recorded device-specific
 quirks. Read it before issuing commands. (A deprecated `instrument_memory`
-field mirrors `device_memory` for back-compat through Phase 1; prefer
+field mirrors `device_memory` for back-compat; prefer
 `device_memory`.)
 
 ## techmanual.ai (documented devices)
@@ -128,7 +127,7 @@ _INSTRUCTIONS = _build_instructions()
 
 mcp = FastMCP("lablink-mcp", instructions=_INSTRUCTIONS)
 
-# Server-lifetime driver singletons, keyed by type_name (lablink_plan.md §4.2).
+# Server-lifetime driver singletons, keyed by type_name (docs/ARCHITECTURE.md §6.2).
 _driver_instances: dict = {}
 
 
@@ -413,7 +412,6 @@ def register_driver_tools() -> None:
 
 def main() -> None:
     """Run the MCP server over stdio."""
-    maybe_migrate_legacy_configs()
     register_driver_tools()
     mcp.run()
 

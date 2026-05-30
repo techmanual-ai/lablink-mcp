@@ -1,113 +1,67 @@
 # Changelog
 
-## Unreleased — LabLink Phase 0b + 0c (multi-driver architecture)
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The architectural rewrite from single-driver VISA to a multi-driver dispatch
-system (driver ABC + registries). See `docs/lablink_plan.md` §9.
+## [Unreleased]
 
-**Breaking — tool and CLI surface renamed.**
-
-| Old (agentlink-visa / Phase 0a) | New |
-|-----|-----|
-| MCP tool `connect_instrument` | `connect` |
-| MCP tool `disconnect_instrument` | `disconnect` |
-| MCP tool `query_instrument` | `visa_query` |
-| MCP tool `write_instrument` | `visa_write` |
-| MCP tool `diagnose_connection` | `diagnose` (+ new `list_devices`) |
-| CLI `lablink query <alias> ...` | `lablink visa query <alias> ...` |
-| CLI `lablink write <alias> ...` | `lablink visa write <alias> ...` |
-
-Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
-work across all drivers and dispatch via the config `type` field. Per-driver
-operation tools (`visa_query`, `visa_write`) register only when that driver's
-dependencies are installed. CLI shared commands stay top-level; per-driver
-commands move under a driver subgroup (`lablink visa ...`).
-
-**Config now requires a `type` field** selecting the driver (e.g.
-`type = "visa"`). Migrated agentlink-visa configs get `type = "visa"` injected
-automatically (Phase 0a auto-migration); new configs must declare it. Example:
-`examples/configs/visa_scope.toml`.
+First release of LabLink: five protocol drivers on a shared multi-driver
+dispatch core, exposed to AI agents over MCP and to developers over a CLI.
 
 ### Added
-- Driver ABC (`LabLinkDriver`), data models, and config mixins in `lablink/base.py`.
-- `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY` dispatch (`lablink/interfaces/`).
-- `list_devices` tool/`lablink list` reporting per-alias status.
-- System-audit `diagnose()` (no alias): per-driver dependency report.
 
-### Changed
-- `scpi_logger` → `event_logger`; canonical log fields formalized
-  (`ts`/`op`/`alias`/`success` guaranteed; §6.4). The `op` field is now any
-  tool name, not just SCPI ops.
-- Server `instructions` rewritten multi-driver, with a runtime loaded-driver
-  count.
-- `instrument_memory` → `device_memory` on `connect()` (the old field is kept
-  as a deprecated mirror through Phase 1).
+**Drivers**
+
+| Driver | Transport | Operation tools |
+|--------|-----------|----------------|
+| `visa` | PyVISA (USB-TMC, TCPIP, GPIB, Serial-VISA) | `visa_query`, `visa_write` |
+| `ssh` | Paramiko | `ssh_exec`, `ssh_shell_session`, `ssh_start_stream`, `ssh_read_stream`, `ssh_stop_stream` |
+| `rest` | httpx | `rest_get`, `rest_post`, `rest_put`, `rest_patch`, `rest_delete` |
+| `serial` | pyserial (RS232/RS422/RS485) | `serial_query`, `serial_write`, `serial_read`, `serial_flush` |
+| `python_shell` | subprocess | `python_shell_exec`, `python_shell_eval` |
+
+An `external` routing stub lets a device be handled by a vendor-supplied MCP
+server, surfacing routing hints to the agent on `connect()`.
+
+**SSH streaming.** `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream`
+buffer the output of long-running commands (log tails, continuous monitors) in a
+bounded background queue, with clean teardown on stop and disconnect.
+
+**python_shell.** A persistent subprocess REPL bound to a user-supplied
+interpreter (`python_path`), bridging to vendor SDKs such as `nidaqmx` and
+`picosdk` that have no VISA or network interface. State persists across calls
+within a session. Communicates over a newline-delimited JSON wire protocol with
+timeout, crash, and busy-state recovery.
+
+**Architecture**
+
+- Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
+  dispatch via the config `type` field across all drivers.
+- Per-driver operation tools register only when that driver's Python
+  dependencies are installed — missing deps are surfaced by `diagnose()`, never
+  a server crash.
+- Driver ABC (`LabLinkDriver[ConfigT]`) with a `Generic[ConfigT]` session model.
+- `AuthConfig` mixin for drivers that need credentials (SSH, REST), referenced by
+  environment variable name only — secrets never live in config files.
+- `DocumentedConfig` mixin carrying `techmanual_document_ids` for
+  [techmanual.ai](https://techmanual.ai) integration on T&M instruments.
+- JSONL event log with canonical `ts` / `op` / `alias` / `success` fields.
+- Three-state session lookup (missing / wrong type / found) for precise error
+  hints.
+- Optional dependency extras per driver (`[visa]`, `[ssh]`, `[rest]`, `[serial]`,
+  `[python_shell]`, `[all]`); the server runs with zero drivers installed.
+- CLI mirroring the MCP tool surface for development and debugging, with the same
+  dependency gating.
 
 ### Validated
-- The refactored VISA path was exercised end-to-end on a real Siglent
-  SDS1104X-E (connect / diagnose / query / write / device memory / event log),
-  closing the Phase 0b exit gate.
 
-### Archived
-- `docs/agent-bootstrap.md` → `docs/archive/agent-bootstrap.md`.
-
-## Unreleased — LabLink Phase 0a (mechanical rename + auto-migration)
-
-**Breaking change.** The `agentlink-visa` PyPI package has been renamed to
-`lablink-mcp` as part of the pivot to a multi-driver architecture (see
-`docs/lablink_plan.md`). The v0.1 tool surface is unchanged in behavior; the
-architectural rewrite (driver ABC, dispatch, per-driver tools) lands in
-Phase 0b/0c.
-
-### Renamed
-
-| Old | New |
-|-----|-----|
-| PyPI package: `agentlink-visa` | `lablink-mcp` |
-| Python package: `agentlink` | `lablink` |
-| CLI command: `agentlink` | `lablink` |
-| MCP entry point: `agentlink-mcp` | `lablink-mcp` |
-| Config directory: `~/.agentlink/instruments/` | `~/.lablink/devices/` |
-| Log directory: `~/.agentlink/logs/` | `~/.lablink/logs/` |
-| Env var: `AGENTLINK_CONFIG_DIR` | `LABLINK_CONFIG_DIR` |
-| Env var: `AGENTLINK_LOG_DIR` | `LABLINK_LOG_DIR` |
-| Env var: `AGENTLINK_VISA_BACKEND` | `LABLINK_VISA_BACKEND` |
-
-The old `agentlink-mcp` and `agentlink` entry points are removed entirely (no
-stderr shim) — MCP clients do not surface failed-server stderr to the user, so
-a shim would be invisible. Update your MCP client config and any scripts to
-the new names.
-
-### Added
-
-- **Auto-migration of configs.** On first `lablink` or `lablink-mcp`
-  invocation, every `*.toml` and `*.md` in `~/.agentlink/instruments/` is
-  copied into `~/.lablink/devices/`. Each migrated TOML that lacks a top-level
-  `type` field is rewritten with `type = "visa"` prepended (legacy
-  agentlink-visa configs had no `type` field). A `MIGRATED.txt` marker is
-  written to the old directory to gate re-runs.
-
-  Set `LABLINK_AUTO_MIGRATE=0` (or `false` / `no`) to disable.
-
-  Per-file rules:
-  - Never overwrites an existing destination file.
-  - TOML files that fail to parse are copied as-is with a stderr warning.
-  - One-line stderr summary on success; one stderr line per skipped or
-    warned file.
-
-### Unchanged
-
-- The tool surface (`connect_instrument`, `disconnect_instrument`,
-  `query_instrument`, `write_instrument`, `diagnose_connection`) and CLI
-  command structure (`lablink connect`, `lablink list`, etc.) are byte-for-byte
-  identical to the agentlink-visa shape — only string-level renames in this
-  phase. The architectural CLI rewrite into per-driver subgroups
-  (`lablink visa query ...`) lands in Phase 0c.
-
-### Known follow-ups
-
-- Phase 0b's behavioral-equivalence gate originally wanted a pre-rename
-  baseline of `agentlink connect <local_instrument>` output. That baseline was
-  never capturable (the `agentlink` entry point was removed in 0a) — it has
-  since been **superseded by direct real-hardware validation of the new
-  `lablink` path** (Phase 0b, Siglent SDS1104X-E). Resolved.
+- **VISA** — end-to-end on a Siglent SDS1104X-E (connect / diagnose / query /
+  write / device memory / event log).
+- **SSH** — unit tests plus a hardware smoke test on a Raspberry Pi 4 (exec,
+  shell session, and live streaming of an `rtl_433` capture).
+- **REST** — live against a public API across all five HTTP verbs.
+- **Serial** — unit tests with a mocked `serial.Serial`.
+- **python_shell** — unit tests plus real-subprocess integration tests exercising
+  the JSON wire protocol (exec, eval, exception/traceback, namespace persistence,
+  stdout capture, shutdown).

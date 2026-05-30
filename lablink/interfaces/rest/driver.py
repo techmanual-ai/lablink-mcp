@@ -4,7 +4,7 @@ RestDriver subclasses LabLinkDriver[RestDriverConfig]. All httpx imports are
 lazy — they happen inside methods, never at module load — so the package
 imports cleanly without the [rest] extra installed.
 
-Phase 2 ships five tools: rest_get, rest_post, rest_put, rest_patch,
+It ships five tools: rest_get, rest_post, rest_put, rest_patch,
 rest_delete. All return ReadResult with status_code and response headers in
 metadata. HTTP 4xx/5xx responses are success=True — the transport worked; the
 agent decides what to do with the status code. success=False is reserved for

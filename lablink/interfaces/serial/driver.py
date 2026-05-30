@@ -4,7 +4,7 @@ SerialDriver subclasses LabLinkDriver[SerialDriverConfig]. All pyserial imports
 are lazy — they happen inside methods, never at module load — so the package
 imports cleanly without the [serial] extra installed.
 
-Phase 3 ships four tools: serial_query (write + read_until), serial_write
+It ships four tools: serial_query (write + read_until), serial_write
 (write only), serial_read (drain buffer), serial_flush (clear buffers).
 
 HTTP semantics note (contrast with REST): serial is a stateful byte stream.

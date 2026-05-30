@@ -2,7 +2,7 @@
 
 VisaDriver subclasses LabLinkDriver[VisaDriverConfig]. It owns the shared
 pyvisa.ResourceManager (one per server process, lazily created on first
-connect; see lablink_plan.md §4.2). All pyvisa imports are lazy — they happen
+connect; see docs/ARCHITECTURE.md §6.2). All pyvisa imports are lazy — they happen
 inside methods, never at module load — so the package imports cleanly without
 the [visa] extra installed.
 """
@@ -34,7 +34,7 @@ _DEFAULT_VISA_BACKEND = "@py"
 
 
 # ---------------------------------------------------------------------------
-# Reachability helpers (ported from the v0.1 diagnostics module)
+# Reachability helpers
 # ---------------------------------------------------------------------------
 
 
@@ -319,7 +319,7 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
 
         session = lookup.session
         # Reset the timeout from scratch every call — never rely on the previous
-        # call's state (lablink_plan.md §6.2 per-call timeout invariant).
+        # call's state (docs/ARCHITECTURE.md §8.2 per-call timeout invariant).
         session.raw.timeout = timeout_ms or session.config.timeout_ms
         try:
             response = session.raw.query(command).strip()
@@ -444,8 +444,8 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
             """Open a VISA session, run op(), and always disconnect.
 
             The CLI is per-invocation (no session persists across commands), so
-            each VISA command opens and closes its own session — matching the
-            debug-UX contract documented in current_status.md.
+            each VISA command opens and closes its own session. MCP sessions, by
+            contrast, persist across tool calls.
             """
             try:
                 config = load_config(alias)

@@ -5,7 +5,7 @@ held open between MCP tool calls — not opened and closed per call. The registr
 is protocol-agnostic: drivers construct their own native connection, wrap it in
 a Session, and register it here.
 
-Lookup is three-state (see lablink_plan.md §6) so error messages can
+Lookup is three-state (see docs/ARCHITECTURE.md §8) so error messages can
 distinguish "no session" from "wrong type" — a wrong-type result tells the
 agent the alias is in use by a different driver, which connect() would clobber.
 """

@@ -4,8 +4,8 @@ SshDriver subclasses LabLinkDriver[SshDriverConfig]. All paramiko imports are
 lazy — they happen inside methods, never at module load — so the package
 imports cleanly without the [ssh] extra installed.
 
-Tools: ssh_exec, ssh_shell_session (Phase 1); ssh_start_stream,
-ssh_read_stream, ssh_stop_stream (Phase 1.5).
+Tools: ssh_exec and ssh_shell_session for command execution; ssh_start_stream,
+ssh_read_stream, ssh_stop_stream for buffering long-running command output.
 """
 
 import importlib.util
@@ -601,7 +601,7 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
             """Run a scripted sequence of commands on an interactive PTY.
 
             Opens a fresh PTY shell for each call (no persistent shell state
-            between calls in Phase 1). Sends each command in order and collects
+            between calls). Sends each command in order and collects
             the full terminal transcript, including prompts and command echo.
             Use when commands depend on interactive shell state (env vars set
             by prior commands, directory context). Prefer ssh_exec for

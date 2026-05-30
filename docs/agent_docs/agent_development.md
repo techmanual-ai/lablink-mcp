@@ -5,7 +5,7 @@
 ### Python
 - **Version:** Python 3.10+
 - **Style:** PEP 8 strictly.
-- **Type Hinting:** Strict type hints (`typing` module) for all function signatures. Use `Generic[ConfigT]` on `Session` and `LabLinkDriver` per `lablink_plan.md` §3 / §4 — avoid `cast()` boilerplate inside driver methods.
+- **Type Hinting:** Strict type hints (`typing` module) for all function signatures. Use `Generic[ConfigT]` on `Session` and `LabLinkDriver` (see `docs/ARCHITECTURE.md`) — avoid `cast()` boilerplate inside driver methods.
 - **Docstrings:** Google Style for all modules, classes, and functions. Per-driver MCP tool docstrings are load-bearing — they are surfaced to the agent as tool descriptions. State explicitly what each parameter means for this protocol.
 - **Linters:** Compatible with `flake8` and `black` formatting.
 
@@ -20,10 +20,10 @@
 
 ### MCP (FastMCP)
 - Follow the FastMCP stdio pattern.
-- The MCP tool surface has two layers (per `lablink_plan.md` §2.2):
+- The MCP tool surface has two layers (see `docs/ARCHITECTURE.md` §2):
   - **Shared lifecycle tools** (`connect`, `disconnect`, `list_devices`, `diagnose`) registered in `mcp_server.py` and dispatched via `DRIVER_REGISTRY[type]`.
   - **Per-driver operation tools** (`visa_query`, `ssh_exec`, etc.) registered inside each driver's `register_tools(mcp)` method, only when the driver's deps are present.
-- Tool return values for error cases must be structured dicts (`{"success": false, "error": "...", "hint": "..."}`) rather than raising exceptions. See `project_goal.md` §2.7.
+- Tool return values for error cases must be structured dicts (`{"success": false, "error": "...", "hint": "..."}`) rather than raising exceptions.
 - Per-driver tool docstrings must explicitly define what each parameter means in this protocol's terms. The agent uses these as its source of truth.
 
 ### CLI (Click)
@@ -34,8 +34,8 @@
 ## 2. Environment & Package Management
 
 - **Package manager:** `uv`. Use `uv venv` to create the environment, `uv pip install -e .[dev]` for development.
-- **Optional extras:** every driver's dependencies are an optional extra (`lablink-mcp[visa]`, `[ssh]`, `[rest]`, `[serial]`, `[common]`, `[all]`). See `lablink_plan.md` §12.
-- **Secrets:** never hardcode. Use environment variables and `.env` files. Config files reference env var names; never values. See `project_goal.md` §2.5.
+- **Optional extras:** every driver's dependencies are an optional extra (`lablink-mcp[visa]`, `[ssh]`, `[rest]`, `[serial]`, `[python_shell]`, `[all]`). See `docs/ARCHITECTURE.md` §9.
+- **Secrets:** never hardcode. Use environment variables and `.env` files. Config files reference env var names; never values.
 - **No Docker.** LabLink runs locally on the user's machine. USB/serial passthrough into containers defeats the point.
 
 ## 3. Driver Implementation Guidelines
@@ -81,7 +81,7 @@ Never hardcode a timeout. Config `timeout_ms` is the default; the per-call kwarg
 Every tool must call `event_logger.log_event(op=..., alias=..., ...)` at every success and failure return point. Logging must never raise — `event_logger` no-ops on filesystem errors.
 
 ### Streaming drivers
-v1 does not ship any streaming drivers. If you are implementing one post-v1, follow the five-rule contract in `lablink_plan.md` §6.5 (bounded queue with documented overflow, thread setup in `connect()` or per-driver `start_*` tool, thread teardown in `disconnect()` with `join(timeout=2.0)`, exception isolation via `session.metadata["stream_error"]`, documented batching semantics in the read tool's docstring).
+The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tools are the reference streaming implementation. Any new streaming driver must follow the five-rule contract in `docs/ARCHITECTURE.md` §11 (bounded queue with documented overflow, thread setup in `connect()` or per-driver `start_*` tool, thread teardown in `disconnect()` with `join(timeout=2.0)`, exception isolation via `session.metadata["stream_error"]`, documented batching semantics in the read tool's docstring).
 
 ## 4. Testing
 
@@ -90,7 +90,7 @@ v1 does not ship any streaming drivers. If you are implementing one post-v1, fol
 - **Mocking:** use `unittest.mock` to mock `pyvisa.ResourceManager`, `paramiko.SSHClient`, `httpx.Client`, `serial.Serial`, and subprocess equivalents. Tests must never open a real connection.
 - **Test location:** `tests/test_shared_tools.py` for shared lifecycle tools, `tests/test_dispatch.py` for type→driver dispatch and dep-presence behavior, `tests/interfaces/test_<type>.py` for per-driver implementations.
 - **No hardware-dependent tests in CI.** If a test requires real hardware, mark it `@pytest.mark.skip(reason="requires hardware")` and document the manual test procedure.
-- **Required dispatch tests (Phase 0b):**
+- **Dispatch behavior to keep covered:**
   - Unknown `type` in config raises `ConfigError` listing valid types.
   - A driver with missing Python deps does not register its tools; its tools are absent from the MCP surface.
   - `connect()` for an alias of a deps-missing driver returns a structured error with the install hint.
@@ -110,23 +110,22 @@ Per-driver tool docstrings should cover:
 - Efficiency patterns (e.g. parallel queries) where they apply
 - Where data flows (return shape, metadata fields)
 
-The VISA driver's tools are the canonical template once Phase 0b lands.
+The VISA driver's tools are the canonical template — match their docstring depth and error-disambiguation style.
 
 ## 6. Documentation Maintenance
 
 When your changes are non-trivial:
 
-- **Update `current_status.md`** — Add a concise entry to "Recent History" describing what changed and why. Update "Current Phase" if your work completes a milestone. Record hacks in "Technical Debt & Known Issues." Prune older tactical entries (rolling window ~10).
-- **Update `lablink_plan.md`** — If implementation reveals a flaw in the plan, fix the plan rather than silently diverge. The plan is a living document.
+- **Update `CHANGELOG.md`** — Add a concise entry under `[Unreleased]` for any user-facing change (new driver, new tool, behavior change), in release-note tone.
+- **Update `docs/ARCHITECTURE.md`** — When the code's component map, data flow, or a documented contract changes (new module, renamed file, new driver, changed dispatch). If implementation reveals a flaw in the design, fix the doc rather than silently diverge.
+- **Update `README.md`** — When scope, the tool surface, or the config schema changes.
 - **Update this file (`agent_development.md`)** — When the developer corrects you on a pattern that should hold generally, capture it here. This document is the codified collective memory.
-- **Update `system_architecture.md`** — When the code's component map changes (new module, renamed file, changed data flow), reflect it here.
-- **Update `project_goal.md`** — Only when a strategic shift occurs (vision, locked design decisions, scope). Routine implementation does not touch this file.
 
 ## 7. Agent Behavior & Interaction
 
 - **Ambiguity:** always ask clarifying questions before implementation. Do not guess.
-- **Scope discipline:** do not add features, refactor, or introduce abstractions beyond what the current task requires. v1 scope is defined in `project_goal.md` (v1 drivers) and `lablink_plan.md` (architecture).
-- **Locked decisions:** do not revisit §2 of `project_goal.md` or §2 of `lablink_plan.md` without explicit instruction from the lead developer.
+- **Scope discipline:** do not add features, refactor, or introduce abstractions beyond what the current task requires. Scope (drivers and non-goals) is defined in `README.md`; architecture in `docs/ARCHITECTURE.md`.
+- **Design decisions:** the design principles in `docs/ARCHITECTURE.md` §2 are settled — do not revisit them without explicit instruction from the lead developer.
 - **Context documents:** be concise. Favor detail over fluff but minimize context window usage.
 - **Self-correction:** if corrected by the developer on a preference or rule, update this document to capture it for future agents.
 

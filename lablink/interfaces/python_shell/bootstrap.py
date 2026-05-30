@@ -7,7 +7,7 @@ within LabLink's own process. PythonShellDriver spawns it as:
 
 and communicates over stdin/stdout using newline-delimited JSON.
 
-Wire protocol (lablink_plan.md §9 Phase 4):
+Wire protocol (docs/ARCHITECTURE.md §12):
   Request  (LabLink → subprocess, stdin):
     {"id": "req-N", "op": "exec",  "code": "..."}
     {"id": "req-N", "op": "eval",  "expression": "..."}

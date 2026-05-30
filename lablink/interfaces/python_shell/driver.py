@@ -4,10 +4,10 @@ PythonShellDriver subclasses LabLinkDriver[PythonShellDriverConfig]. It has no
 third-party Python deps (uses only stdlib), so check_python_deps() returns []
 and its tools are always registered.
 
-Phase 4 ships two tools: python_shell_exec (run a code block) and
+It ships two tools: python_shell_exec (run a code block) and
 python_shell_eval (evaluate a single expression and return its repr).
 
-Wire protocol: lablink_plan.md §9 Phase 4. The bootstrap script
+Wire protocol: docs/ARCHITECTURE.md §12. The bootstrap script
 (lablink/interfaces/python_shell/bootstrap.py) runs in the user's interpreter
 subprocess. Requests and responses are newline-delimited JSON over stdin/stdout.
 State (the namespace dict inside the bootstrap) persists for the lifetime of
@@ -16,8 +16,8 @@ the session.
 Session.metadata keys:
     busy: bool          — True while a request is in-flight. Safe as a plain
                           bool under v1's single-threaded FastMCP dispatch.
-                          See lablink_plan.md §9 Phase 4 "Forward note" for the
-                          async-dispatch caveat if that lands post-v1.
+                          See docs/ARCHITECTURE.md §10 for the async-dispatch
+                          caveat if concurrent dispatch ever lands.
     req_counter: int    — monotonic counter used to generate request IDs.
 """
 
@@ -405,7 +405,7 @@ class PythonShellDriver(LabLinkDriver[PythonShellDriverConfig]):
     ) -> dict:
         """Send a wire-protocol request and wait for the response.
 
-        Handles the four failure modes from lablink_plan.md §9 Phase 4:
+        Handles the four failure modes from docs/ARCHITECTURE.md §12:
         busy check, subprocess crash on write, timeout (timed_out=True, busy
         stays True), and clean response.
         """

@@ -1,4 +1,4 @@
-"""Dispatch and registry tests — the Phase 0b exit-gate set (lablink_plan.md §9).
+"""Dispatch and registry tests (see docs/ARCHITECTURE.md §6).
 
 Covers:
   - DRIVER_REGISTRY / DRIVER_CONFIG_REGISTRY key sets match.
@@ -87,7 +87,7 @@ def test_register_driver_tools_registers_when_present(monkeypatch):
     assert {"visa_query", "visa_write"} <= tools
 
 
-# --- Phase 0c expanded dispatch contracts ----------------------------------
+# --- Expanded dispatch contracts -------------------------------------------
 
 
 def test_diagnose_no_alias_enumerates_all_drivers():

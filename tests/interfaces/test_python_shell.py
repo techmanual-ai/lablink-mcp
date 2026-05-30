@@ -347,7 +347,7 @@ class TestDiagnose:
 
 
 # ---------------------------------------------------------------------------
-# python_shell_exec — clean execution (exit gate case 1)
+# python_shell_exec — clean execution
 # ---------------------------------------------------------------------------
 
 
@@ -437,7 +437,7 @@ class TestExec:
 
 
 # ---------------------------------------------------------------------------
-# python_shell_exec — exception in user code (exit gate case 3)
+# python_shell_exec — exception in user code
 # ---------------------------------------------------------------------------
 
 
@@ -478,7 +478,7 @@ class TestExecException:
 
 
 # ---------------------------------------------------------------------------
-# python_shell_eval — clean evaluation (exit gate case 2)
+# python_shell_eval — clean evaluation
 # ---------------------------------------------------------------------------
 
 
@@ -538,7 +538,7 @@ class TestEval:
 
 
 # ---------------------------------------------------------------------------
-# Timeout and busy handling (exit gate case 4)
+# Timeout and busy handling
 # ---------------------------------------------------------------------------
 
 
@@ -573,7 +573,7 @@ class TestTimeoutAndBusy:
         proc.stdin.write.assert_not_called()
 
     def test_disconnect_after_timeout_recovers(self):
-        """Exit gate case 4: timeout-still-running with recovery via disconnect."""
+        """Timeout-still-running with recovery via disconnect."""
         proc = _mock_proc()
         driver = PythonShellDriver()
         session = _register_session(proc, _config())
@@ -632,7 +632,7 @@ class TestSubprocessCrash:
 
 
 # ---------------------------------------------------------------------------
-# Vendor-SDK persistence scenario (exit gate case: state persists)
+# Vendor-SDK persistence scenario (state persists across calls)
 # ---------------------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-"""Phase 0b Task 0 — FastMCP late-registration smoke test (stop-the-line).
+"""FastMCP late-registration smoke test.
 
 The LabLink architecture relies on a load-bearing assumption: FastMCP accepts
 ``@mcp.tool()``-decorated functions applied *inside an instance method called
@@ -7,9 +7,8 @@ FastMCP usage is module-level ``mcp = FastMCP()`` plus top-level decorated
 functions; our pattern instantiates a driver, then calls ``register_tools(mcp)``
 which decorates inside that method.
 
-If this test fails, the entire per-driver registration architecture is invalid
-and Phase 0b must stop until the design is revisited. See lablink_plan.md §9
-Phase 0b Task 0.
+If this test fails, the entire per-driver registration architecture is invalid.
+See docs/ARCHITECTURE.md §6.
 """
 
 import asyncio

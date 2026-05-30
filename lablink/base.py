@@ -5,7 +5,7 @@ mixins), the ``Session`` record, and the ``LabLinkDriver`` ABC. It is the one
 module that all drivers depend on and depends on nothing else in ``lablink`` —
 keeping it import-cycle-free.
 
-All dataclasses are declared ``kw_only=True``. See ``lablink_plan.md`` §3.1:
+All dataclasses are declared ``kw_only=True``. See ``docs/ARCHITECTURE.md`` §5.1:
 without it, field ordering across the config mixins (DriverConfig + AuthConfig
 + DocumentedConfig) breaks the moment a subclass adds a required field after a
 mixin contributes a defaulted one.
@@ -42,7 +42,7 @@ class ReadResult:
     """Tool result for any tool that returns data — queries, reads, exec
     stdout, REST bodies, etc.
 
-    Read-style semantics (locked, see lablink_plan.md §3):
+    Read-style semantics (see docs/ARCHITECTURE.md §5.2):
       Data arrived:       ReadResult(success=True, raw=<data>, timed_out=False)
       Timeout, no data:   ReadResult(success=True, raw=None, timed_out=True)
       Broken/dead stream: ReadResult(success=False, error=..., hint=...)
@@ -72,8 +72,8 @@ class ConnectResult:
     device_memory: Optional[str] = None   # content of <alias>.md if present
     instrument_memory: Optional[str] = None  # DEPRECATED alias of device_memory;
                                           # auto-populated by __post_init__ for
-                                          # back-compat through Phase 1; removed in
-                                          # Phase 2. Do not read in new code.
+                                          # back-compat. Scheduled for removal in a
+                                          # future release. Do not read in new code.
     techmanual_document_ids: list[int] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     error: Optional[str] = None
@@ -84,8 +84,9 @@ class ConnectResult:
         # IMPORTANT: __post_init__ runs once, at construction. Post-hoc attribute
         # writes (result.device_memory = "...") do NOT re-trigger this and leave
         # instrument_memory stale at None. Code that populates device_memory
-        # after construction must use dataclasses.replace() (see §6.3.1).
-        # This method is deleted when instrument_memory is removed in Phase 2.
+        # after construction must use dataclasses.replace()
+        # (see docs/ARCHITECTURE.md §8.3). This method is removed when
+        # instrument_memory is removed.
         if self.device_memory is not None and self.instrument_memory is None:
             self.instrument_memory = self.device_memory
 

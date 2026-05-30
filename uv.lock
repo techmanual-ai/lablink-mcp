@@ -765,7 +765,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'rest'", specifier = ">=0.27" },
-    { name = "lablink-mcp", extras = ["visa", "ssh", "rest", "serial"], marker = "extra == 'all'" },
+    { name = "lablink-mcp", extras = ["visa", "ssh", "rest", "serial", "python-shell"], marker = "extra == 'all'" },
     { name = "paramiko", marker = "extra == 'dev'", specifier = ">=3.0" },
     { name = "paramiko", marker = "extra == 'ssh'", specifier = ">=3.0" },
     { name = "pyserial", marker = "extra == 'dev'", specifier = ">=3.5" },
@@ -777,7 +777,7 @@ requires-dist = [
     { name = "pyvisa-py", marker = "extra == 'visa'", specifier = ">=0.7" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
 ]
-provides-extras = ["visa", "ssh", "rest", "serial", "all", "dev"]
+provides-extras = ["visa", "ssh", "rest", "serial", "python-shell", "all", "dev"]
 
 [[package]]
 name = "markdown-it-py"

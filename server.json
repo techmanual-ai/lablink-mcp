@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.techmanual-ai/lablink-mcp",
   "title": "LabLink",
-  "description": "Direct AI agent control of test and measurement equipment via VISA. Connect, query, and write SCPI commands to oscilloscopes, spectrum analyzers, power supplies, and other VISA-compatible instruments.",
+  "description": "Direct AI agent control of lab devices and services. One server, many protocol drivers: VISA/SCPI test instruments, SSH hosts, REST APIs, serial devices, and user-supplied Python environments. Connect by alias, send commands, read results, and iterate.",
   "repository": {
     "url": "https://github.com/techmanual-ai/lablink-mcp",
     "source": "github"

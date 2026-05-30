@@ -5,13 +5,18 @@ build-backend = "hatchling.build"
 [project]
 name = "lablink-mcp"
 version = "0.1.0"
-description = "MCP server for AI agent control of test and measurement equipment via PyVISA"
+description = "MCP server for direct AI agent control of lab devices — VISA/SCPI instruments, SSH hosts, REST APIs, serial devices, and Python environments"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=2.0",
     "click>=8.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/techmanual-ai/lablink-mcp"
+Repository = "https://github.com/techmanual-ai/lablink-mcp"
 
 [project.scripts]
 lablink = "cli:cli"

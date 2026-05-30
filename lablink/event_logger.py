@@ -1,9 +1,8 @@
 """Event logger.
 
 Appends one JSONL entry per tool call to a per-UTC-day file in the log
-directory. Generalized from agentlink-visa's scpi_logger — the ``op`` field is
-now any tool name (``connect``, ``visa_query``, ``ssh_exec``, ``disconnect``,
-...), not just SCPI operations.
+directory. The ``op`` field is any tool name (``connect``, ``visa_query``,
+``ssh_exec``, ``disconnect``, ...).
 
 Default log directory: ~/.lablink/logs/
 Override:  set LABLINK_LOG_DIR to a different path.
@@ -11,7 +10,7 @@ Disable:   set LABLINK_LOG_DIR to an empty string.
 
 One file per day: <log_dir>/YYYY-MM-DD.jsonl
 
-Canonical field contract (lablink_plan.md §6.4):
+Canonical field contract (docs/ARCHITECTURE.md §8.4):
   - ts       — auto-populated UTC ISO-8601 timestamp.
   - op       — caller-required; the tool name as the agent sees it.
   - alias    — caller-required; the device alias (None for the no-alias

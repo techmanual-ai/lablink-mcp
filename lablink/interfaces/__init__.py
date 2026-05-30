@@ -1,7 +1,7 @@
 """Driver registries.
 
 Two parallel dicts map a config ``type`` to its driver class and its config
-class. Adding a driver is one line in each (see lablink_plan.md §4, §11). The
+class. Adding a driver is one line in each (see docs/ARCHITECTURE.md §6.1, §13). The
 parallel-dict form reads more clearly in PR diffs than a single tuple registry
 when only one side changes; the import-time key-match check below guards against
 drift.

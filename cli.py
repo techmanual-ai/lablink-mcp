@@ -3,7 +3,7 @@
 Thin wrappers over the same shared dispatch path used by the MCP tools.
 Intended for development, debugging, and config validation.
 
-Structure mirrors the MCP tool surface (lablink_plan.md §6.6):
+Structure mirrors the MCP tool surface (docs/ARCHITECTURE.md §4):
   - Shared lifecycle commands (always present): connect, disconnect, list,
     diagnose.
   - Per-driver subgroups (present only when the driver's deps are installed),
@@ -24,7 +24,6 @@ import sys
 
 import click
 
-from lablink.config import maybe_migrate_legacy_configs
 from lablink.interfaces import DRIVER_REGISTRY
 
 # Shared lifecycle logic + the driver-instance accessor live in mcp_server so
@@ -42,7 +41,6 @@ from mcp_server import (
 @click.group()
 def cli() -> None:
     """LabLink: AI agent control of lab devices."""
-    maybe_migrate_legacy_configs()
 
 
 # --- Shared lifecycle commands ---------------------------------------------
