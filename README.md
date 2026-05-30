@@ -1,13 +1,9 @@
 <!-- mcp-name: io.github.techmanual-ai/lablink-mcp -->
 
-<p align="center"><img src="docs/assets/banner.svg" alt="LabLink" width="640"></p>
-
-<h1 align="center">🔬 LabLink</h1>
+<h1 align="center">LabLink</h1>
 
 <p align="center">
-  <strong>Give your AI agent a screwdriver.</strong><br>
-  One MCP server, many protocol drivers — VISA/SCPI instruments, SSH hosts, REST APIs,<br>
-  serial devices, and user-supplied Python environments. One install.
+  Unified &amp; extensible MCP server enabling connectivity to all types of lab equipment
 </p>
 
 <p align="center">
@@ -34,33 +30,22 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-> **Works standalone.** Pair it with [techmanual.ai](https://techmanual.ai) to give your
-> agent both hardware access and instrument documentation, but neither product requires
-> the other.
+> Pairs with [techmanual.ai](https://techmanual.ai) for agent-directed manual and SCPI
+> reference lookups — but neither product requires the other.
 
 ---
 
 ## What is LabLink?
 
-An agent given a hardware-control task can already write the Python to do it — but
-someone has to run that code, read back what the instrument returned, and feed it to the
-next step. The agent never closes the loop itself.
+LabLink gives an AI agent direct, structured access to lab hardware and services — without a human in the loop. Connect by alias, send commands, read results, and iterate across any combination of devices in a single session.
 
-**LabLink removes the human from that loop.** The agent connects to a device by alias,
-sends commands, reads results, and iterates — measuring, computing, configuring, and
-self-correcting across one or many devices in a single session. It picks up a screwdriver
-of its own.
+- **5 protocol drivers** out of the box: VISA/SCPI, SSH, REST, serial, and a Python subprocess shell
+- **Per-protocol tool names** (`visa_query`, `ssh_exec`, `rest_get`) — no leaky one-size-fits-all interface
+- **Install only what you need** — drivers are optional extras; the server runs with zero installed
+- **`diagnose()`** surfaces exactly what is missing or unreachable before the agent tries to use it
+- **Extensible** — add a driver with no changes to the core server or CLI
 
-The tool surface is honest about each protocol: the agent sees `visa_query`, `ssh_exec`,
-`rest_get` rather than one overloaded interface that hides per-protocol behavior. Only the
-drivers whose dependencies you install are exposed, and `diagnose()` tells the agent
-exactly what's missing or unreachable when something doesn't work.
-
-> **Pairs with [techmanual.ai](https://techmanual.ai).** An agent with LabLink alone
-> handles common hardware well using its own knowledge. Add techmanual.ai — a searchable
-> index of manufacturer manuals and SCPI references — and the agent can look up the right
-> command for an unfamiliar instrument, send it via LabLink, observe the response, and
-> iterate. The two are designed to be used together; neither requires the other.
+<img src="docs/assets/banner.svg" alt="LabLink — one agent, every interface" width="100%">
 
 ---
 
