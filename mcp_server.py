@@ -89,6 +89,15 @@ of relying on training data. If the list is empty, search by manufacturer and
 model_number and write the discovered IDs back into the config so later
 sessions skip the search.
 
+## External devices (type = "external_mcp")
+
+Some devices are controlled by a separate manufacturer-supplied MCP server
+rather than a LabLink driver. These appear in list_devices() like any other
+alias. Calling connect(alias) on an external device returns routing
+instructions in device_memory — read them to learn which external MCP server
+and tools to use. Do not call LabLink operation tools (visa_*, ssh_*, etc.)
+for external aliases.
+
 ## Logging
 
 Every tool call is appended to ~/.lablink/logs/YYYY-MM-DD.jsonl (op, alias,
@@ -179,7 +188,12 @@ def do_connect(alias: str) -> dict:
 
     # Inject device_memory at the shared layer via replace() so __post_init__
     # re-runs and mirrors device_memory -> instrument_memory (§6.3.1).
-    final = dataclasses.replace(result, device_memory=load_device_memory(alias))
+    # The .md file takes precedence; fall back to whatever the driver provided
+    # (e.g. ExternalDriver surfaces tool_instructions this way).
+    file_memory = load_device_memory(alias)
+    final = dataclasses.replace(
+        result, device_memory=file_memory if file_memory is not None else result.device_memory
+    )
     return asdict(final)
 
 
@@ -306,7 +320,10 @@ def do_diagnose(alias: Optional[str] = None) -> dict:
 
     driver = get_driver(config.type)
     result = driver.diagnose(config)
-    final = dataclasses.replace(result, device_memory=load_device_memory(alias))
+    file_memory = load_device_memory(alias)
+    final = dataclasses.replace(
+        result, device_memory=file_memory if file_memory is not None else result.device_memory
+    )
     log_event(op="diagnose", alias=alias, success=final.ready)
     return asdict(final)
 

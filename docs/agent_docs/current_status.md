@@ -1,7 +1,7 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 1 Complete — SSH driver (exec-only) shipped**
+**LabLink Phase 1 + External driver — SSH shipped; external MCP routing stub added**
 
 Phase 1 adds the SSH driver as the first new driver on top of the multi-driver
 core. The dispatch architecture is now validated for a protocol with genuinely
@@ -25,7 +25,7 @@ multi-driver dispatch system with VISA and SSH as the v1 drivers so far:
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**105/105 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH. Both the 0b
+**120/120 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH. Both the 0b
 and 0c exit gates are MET (see `implementation_log.md`); the VISA path was
 validated end-to-end on the real Siglent SDS1104X-E. SSH validated by unit
 tests (no hardware required; paramiko mocked via `patch("paramiko.SSHClient")`).
@@ -89,6 +89,17 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[External driver]** Added `type = "external"` routing stub for
+  devices controlled by manufacturer-supplied MCP servers. `ExternalDriverConfig`
+  has two fields: `mcp_server` (freeform label) and `tool_instructions` (routing
+  hint surfaced to the agent via `device_memory` on `connect()`). `ExternalDriver`
+  registers no operation tools — the external server provides those directly.
+  `mcp_server.do_connect` / `do_diagnose` updated with a generic fallback: when
+  no `<alias>.md` file exists, the driver's `ConnectResult.device_memory` is used
+  instead of `None` (benefits external and any future driver that wants to supply
+  default memory). 15 new tests; 120/120 pass. Added
+  `examples/configs/external_saleae.toml`.
 
 - **2026-05-29** — **[Phase 1 Complete]** SSH driver shipped as the first new
   driver on the multi-driver core. Added `lablink/interfaces/ssh/` with

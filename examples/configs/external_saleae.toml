@@ -1,0 +1,28 @@
+type        = "external_mcp"
+alias       = "saleae_logic2"
+description = "Saleae Logic 2 — controlled via saleae-logic2-mcp server"
+timeout_ms  = 5000
+
+# The name of the external MCP server as registered in your MCP client config.
+mcp_server = "saleae-logic2-mcp"
+
+# Freeform routing instructions surfaced to the agent via connect().
+# The agent reads this (as device_memory) and routes commands to the
+# external server's tools rather than calling any LabLink operation tools.
+tool_instructions = """
+This device is controlled via the saleae-logic2-mcp MCP server — not LabLink tools.
+Do NOT call visa_*, ssh_*, or any other LabLink operation tools for this alias.
+
+Available tools (from saleae-logic2-mcp):
+  - saleae_get_devices        — list connected Logic analyzers
+  - saleae_start_capture      — begin a capture (configure channels/sample rate first)
+  - saleae_stop_capture       — stop the current capture
+  - saleae_get_analyzers      — list protocol analyzers on the current capture
+  - saleae_export_data        — export capture data to a file
+
+Typical workflow:
+  1. saleae_get_devices to confirm the analyzer is visible
+  2. saleae_start_capture with your channel/sample-rate config
+  3. saleae_stop_capture when done (or it stops on trigger)
+  4. saleae_get_analyzers / saleae_export_data to read results
+"""
