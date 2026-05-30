@@ -1,0 +1,262 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400">
+
+  <!-- ================================================================
+       LabLink README Banner — 1280 × 400 — transparent background
+       Works on GitHub light (#ffffff) and dark (#0d1117).
+
+       Hub head center (640, 186) — 7 driver nodes on an ellipse
+       Ellipse: cx=640 cy=200 rx=340 ry=125
+       Equal angular spacing: 360°/7 ≈ 51.43°, starting at top (−90°)
+       Left/right symmetric about x=640
+
+       Node centers (cx, cy):
+         Pos 0  VISA/SCPI    (640,  75)  — top
+         Pos 1  SSH Host     (906, 122)  — upper-right
+         Pos 2  REST API     (972, 228)  — right
+         Pos 3  External MCP (788, 313)  — lower-right
+         Pos 4  Serial Dev   (492, 313)  — lower-left
+         Pos 5  Python Env   (308, 228)  — left
+         Pos 6  7th stub     (374, 122)  — upper-left
+
+       All node chips: (cx−98, cy−32, 196×64, rx=14)
+       Icon:  translate(cx−88, cy−11)  →  22×22 box
+       Text1: x=cx−58  y=cy−4   size=15 weight=600  (two-line block centered at cy)
+       Text2: x=cx−58  y=cy+12  size=11 weight=400 opacity=0.7
+
+       Hub: wordmark baseline y=200, tagline y=220; hub effective center (640,200)
+
+       Connectors (55 px exclusion radius from hub center; node endpoints at chip boundary):
+         VISA   (640,145) → (640,107)   straight up, hits chip bottom
+         SSH    (693,185) → (808,151)   upper-right, hits chip left edge
+         REST   (695,205) → (874,220)   right, hits chip left edge
+         ExtMCP (682,236) → (751,296)   lower-right, hits chip top edge
+         Serial (598,236) → (529,296)   lower-left, hits chip top edge
+         Python (585,205) → (406,220)   left, hits chip right edge
+         7th    (587,185) → (472,151)   upper-left, hits chip right edge
+       ================================================================ -->
+
+  <!-- ── CONNECTORS — colored, dashed, 70 % opacity ────────────────── -->
+
+  <!-- VISA — cyan, straight up -->
+  <line x1="640" y1="164" x2="640" y2="107"
+        stroke="#EF4444" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- SSH Host — gold, upper-right -->
+  <line x1="710" y1="180" x2="808" y2="151"
+        stroke="#F97316" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- REST API — emerald, right -->
+  <line x1="732" y1="208" x2="874" y2="220"
+        stroke="#EAB308" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- External MCP — pink, lower-right -->
+  <line x1="682" y1="236" x2="751" y2="296"
+        stroke="#22C55E" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- Serial Device — orange, lower-left -->
+  <line x1="598" y1="236" x2="529" y2="296"
+        stroke="#06B6D4" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- Python Env — cyan, left -->
+  <line x1="548" y1="208" x2="406" y2="220"
+        stroke="#8B5CF6" stroke-opacity="0.7" stroke-width="2"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- 7th stub — grey, upper-left, faint -->
+  <line x1="570" y1="180" x2="472" y2="151"
+        stroke="#A1A1AA" stroke-opacity="0.32" stroke-width="1.5"
+        stroke-dasharray="6 6" stroke-linecap="round"/>
+
+  <!-- ── HUB ───────────────────────────────────────────────────────── -->
+  <g id="hub">
+
+    <!-- Wordmark -->
+    <text x="640" y="200" text-anchor="middle"
+          font-family="'Satoshi','Satoshi-Bold','Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="32" font-weight="700" letter-spacing="-0.5"
+          fill="#1D48E6">LabLink</text>
+
+    <!-- Tagline -->
+    <text x="640" y="220" text-anchor="middle"
+          font-family="'Satoshi','Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="13" font-weight="400" fill="#71717A"
+          letter-spacing="0.3">One agent. Every interface.</text>
+
+  </g>
+
+  <!-- ── NODE: VISA / SCPI — top  cx=640 cy=75 — Cyan #EF4444 ─────── -->
+  <g id="node-visa">
+
+    <rect x="542" y="43" width="196" height="64" rx="14"
+          fill="#EF4444" fill-opacity="0.10" stroke="#EF4444" stroke-width="1.5"/>
+
+    <!-- Oscilloscope screen (22×22) -->
+    <g transform="translate(552,64)" fill="none" stroke="#EF4444">
+      <rect x="0" y="2" width="22" height="18" rx="2" stroke-width="1.4"/>
+      <line x1="11" y1="3"  x2="11" y2="19" stroke-width="0.5" stroke-opacity="0.3"/>
+      <line x1="1"  y1="11" x2="21" y2="11" stroke-width="0.5" stroke-opacity="0.3"/>
+      <polyline points="1,11 4,11 6,5.5 8,16.5 10,11 13,11 15,7 17,15 21,11"
+                stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
+
+    <text x="582" y="71"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#EF4444">VISA / SCPI</text>
+
+    <text x="582" y="87"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#EF4444" fill-opacity="0.7">scopes · DMMs · PSUs</text>
+
+  </g>
+
+  <!-- ── NODE: SSH Host — upper-right  cx=906 cy=122 — Gold #F97316 ── -->
+  <g id="node-ssh">
+
+    <rect x="808" y="90" width="196" height="64" rx="14"
+          fill="#F97316" fill-opacity="0.10" stroke="#F97316" stroke-width="1.5"/>
+
+    <!-- Terminal prompt >_ (22×22) -->
+    <g transform="translate(818,111)" fill="none" stroke="#F97316"
+       stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="0,1 9,11 0,21"/>
+      <line x1="12" y1="21" x2="22" y2="21"/>
+    </g>
+
+    <text x="848" y="118"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#F97316">SSH Host</text>
+
+    <text x="848" y="134"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#F97316" fill-opacity="0.7">Linux servers · Raspberry Pi</text>
+
+  </g>
+
+  <!-- ── NODE: REST API — right  cx=972 cy=228 — Emerald #EAB308 ────── -->
+  <g id="node-rest">
+
+    <rect x="874" y="196" width="196" height="64" rx="14"
+          fill="#EAB308" fill-opacity="0.10" stroke="#EAB308" stroke-width="1.5"/>
+
+    <!-- Curly braces { } (22×22) — braces shifted ±2 px for visible gap -->
+    <g transform="translate(884,217)" fill="none" stroke="#EAB308"
+       stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10,1 C7.5,1 6.5,2 6.5,4 L6.5,7.5 C6.5,9.5 5.5,10.5 3,11
+               C5.5,11.5 6.5,12.5 6.5,14.5 L6.5,18 C6.5,20 7.5,21 10,21"/>
+      <path d="M14,1 C16.5,1 17.5,2 17.5,4 L17.5,7.5 C17.5,9.5 18.5,10.5 21,11
+               C18.5,11.5 17.5,12.5 17.5,14.5 L17.5,18 C17.5,20 16.5,21 14,21"/>
+    </g>
+
+    <text x="914" y="224"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#EAB308">REST API</text>
+
+    <text x="914" y="240"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#EAB308" fill-opacity="0.7">web services · cloud APIs</text>
+
+  </g>
+
+  <!-- ── NODE: External MCP — lower-right  cx=788 cy=328 — Pink #22C55E -->
+  <g id="node-external">
+
+    <rect x="690" y="296" width="196" height="64" rx="14"
+          fill="#22C55E" fill-opacity="0.10" stroke="#22C55E" stroke-width="1.5"/>
+
+    <!-- Puzzle piece (22×22) -->
+    <g transform="translate(700,317)" fill="none" stroke="#22C55E"
+       stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0,4 L5,4 L5,1.5 Q5,0 7,0 Q9,0 9,1.5 L9,4 L18,4 L18,17
+               L15,17 L15,19.5 Q15,22 13,22 Q11,22 11,19.5 L11,17 L0,17 Z"/>
+      <path d="M18,8 L20,8 Q22,8 22,10.5 Q22,13 20,13 L18,13"/>
+    </g>
+
+    <text x="730" y="324"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#22C55E">External MCP</text>
+
+    <text x="730" y="340"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#22C55E" fill-opacity="0.7">vendor MCP servers</text>
+
+  </g>
+
+  <!-- ── NODE: Serial Device — lower-left  cx=492 cy=328 — Orange #06B6D4 -->
+  <g id="node-serial">
+
+    <rect x="394" y="296" width="196" height="64" rx="14"
+          fill="#06B6D4" fill-opacity="0.10" stroke="#06B6D4" stroke-width="1.5"/>
+
+    <!-- IC chip with pins (22×22) -->
+    <g transform="translate(404,317)" fill="none" stroke="#06B6D4" stroke-linecap="round">
+      <rect x="5" y="2" width="12" height="18" rx="2" stroke-width="1.4"/>
+      <path d="M8,2 Q11,0 14,2" stroke-width="0.9" stroke-opacity="0.8"/>
+      <line x1="0"  y1="5"  x2="5"  y2="5"  stroke-width="1.3"/>
+      <line x1="0"  y1="11" x2="5"  y2="11" stroke-width="1.3"/>
+      <line x1="0"  y1="17" x2="5"  y2="17" stroke-width="1.3"/>
+      <line x1="17" y1="5"  x2="22" y2="5"  stroke-width="1.3"/>
+      <line x1="17" y1="11" x2="22" y2="11" stroke-width="1.3"/>
+      <line x1="17" y1="17" x2="22" y2="17" stroke-width="1.3"/>
+    </g>
+
+    <text x="434" y="324"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#06B6D4">Serial Device</text>
+
+    <text x="434" y="340"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#06B6D4" fill-opacity="0.7">RS-232 / RS-485 · MCUs</text>
+
+  </g>
+
+  <!-- ── NODE: Python Env — left  cx=308 cy=228 — Blue #8B5CF6 ─────── -->
+  <g id="node-python_shell">
+
+    <rect x="210" y="196" width="196" height="64" rx="14"
+          fill="#8B5CF6" fill-opacity="0.10" stroke="#8B5CF6" stroke-width="1.5"/>
+
+    <!-- Python logo — two interlocked snake-head shapes (22×22) -->
+    <g transform="translate(220,217)">
+      <path d="M5,0 L14,0 Q18,0 18,4 L18,8 L9,8 L9,10 L5,10 Q1,10 1,6 L1,4 Q1,0 5,0 Z"
+            fill="#8B5CF6" fill-opacity="0.9"/>
+      <circle cx="14" cy="3.5" r="1.8" fill="white"/>
+      <path d="M17,22 L8,22 Q4,22 4,18 L4,14 L13,14 L13,12 L17,12 Q21,12 21,16 L21,18 Q21,22 17,22 Z"
+            fill="#8B5CF6" fill-opacity="0.55"/>
+      <circle cx="8" cy="18.5" r="1.8" fill="white"/>
+    </g>
+
+    <text x="250" y="224"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="15" font-weight="600" fill="#8B5CF6">Python Env</text>
+
+    <text x="250" y="240"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="11" font-weight="400" fill="#8B5CF6" fill-opacity="0.7">scripts · vendor SDKs</text>
+
+  </g>
+
+  <!-- ── 7th NODE: extensibility stub — upper-left  cx=374 cy=122 ────── -->
+  <!-- Same chip size as all other nodes; dashed border; ~38% opacity    -->
+  <g id="node-extensible" opacity="0.38">
+
+    <rect x="276" y="90" width="196" height="64" rx="14"
+          fill="#A1A1AA" fill-opacity="0.12"
+          stroke="#A1A1AA" stroke-width="1.5" stroke-dasharray="5 4"/>
+
+    <!-- Text centered — no icon -->
+    <text x="374" y="118" text-anchor="middle"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="13" font-weight="600" fill="#A1A1AA">custom interfaces</text>
+
+    <text x="374" y="133" text-anchor="middle"
+          font-family="'Inter','Poppins','Space Grotesk',system-ui,sans-serif"
+          font-size="10" font-weight="400" fill="#A1A1AA" fill-opacity="0.8">extensible · community-built</text>
+
+  </g>
+
+</svg>
