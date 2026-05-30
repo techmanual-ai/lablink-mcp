@@ -1,40 +1,93 @@
-# lablink-mcp
-
 <!-- mcp-name: io.github.techmanual-ai/lablink-mcp -->
 
-MCP server that gives AI agents direct, structured control over lab devices and services — test instruments (VISA/SCPI), remote systems (SSH), web APIs (REST), serial devices, and user-supplied Python environments. One server, many protocol drivers, one install.
+<!-- Drop a banner image here when you have one, e.g.:
+<p align="center"><img src="docs/assets/banner.png" alt="LabLink" width="640"></p>
+-->
 
-**Works standalone.** Pair it with [techmanual.ai](https://techmanual.ai) to give your agent both hardware access and instrument documentation, but neither product requires the other.
+<h1 align="center">🔬 LabLink</h1>
+
+<p align="center">
+  <strong>Give your AI agent a screwdriver.</strong><br>
+  One MCP server, many protocol drivers — VISA/SCPI instruments, SSH hosts, REST APIs,<br>
+  serial devices, and user-supplied Python environments. One install.
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/lablink-mcp/"><img src="https://img.shields.io/pypi/v/lablink-mcp?style=for-the-badge&logo=pypi&logoColor=white&color=3775A9" alt="PyPI version"></a>
+  <img src="https://img.shields.io/badge/python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/techmanual-ai/lablink-mcp/actions"><img src="https://img.shields.io/github/actions/workflow/status/techmanual-ai/lablink-mcp/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=tests" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/MCP-server-6E56CF?style=for-the-badge" alt="MCP server">
+</p>
+
+<p align="center">
+  <a href="https://github.com/techmanual-ai/lablink-mcp/stargazers"><img src="https://img.shields.io/github/stars/techmanual-ai/lablink-mcp?style=flat-square&logo=github" alt="Stars"></a>
+  <a href="https://github.com/techmanual-ai/lablink-mcp/releases"><img src="https://img.shields.io/github/v/release/techmanual-ai/lablink-mcp?style=flat-square" alt="Release"></a>
+  <img src="https://img.shields.io/badge/drivers-5-6E56CF?style=flat-square" alt="5 drivers">
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs welcome"></a>
+</p>
+
+<p align="center">
+  <a href="#-install">Install</a> ·
+  <a href="#-quick-start">Quick Start</a> ·
+  <a href="#mcp-tools">Tools</a> ·
+  <a href="#device-configuration">Configuration</a> ·
+  <a href="#cli-reference">CLI</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+> **Works standalone.** Pair it with [techmanual.ai](https://techmanual.ai) to give your
+> agent both hardware access and instrument documentation, but neither product requires
+> the other.
 
 ---
 
-## Why LabLink
+## What is LabLink?
 
 An agent given a hardware-control task can already write the Python to do it — but
-someone has to run that code, read back what the instrument returned, and feed it
-to the next step. The agent never closes the loop itself.
+someone has to run that code, read back what the instrument returned, and feed it to the
+next step. The agent never closes the loop itself.
 
-LabLink removes the human from that loop. The agent connects to a device by alias,
-sends commands, reads results, and iterates — measuring, computing, configuring,
-and self-correcting across one or many devices in a single session. It picks up a
-screwdriver of its own.
+**LabLink removes the human from that loop.** The agent connects to a device by alias,
+sends commands, reads results, and iterates — measuring, computing, configuring, and
+self-correcting across one or many devices in a single session. It picks up a screwdriver
+of its own.
 
-The tool surface is honest about each protocol: the agent sees `visa_query`,
-`ssh_exec`, `rest_get` rather than one overloaded interface that hides per-protocol
-behavior. Only the drivers whose dependencies you install are exposed, and
-`diagnose()` tells the agent exactly what's missing or unreachable when something
-doesn't work.
+The tool surface is honest about each protocol: the agent sees `visa_query`, `ssh_exec`,
+`rest_get` rather than one overloaded interface that hides per-protocol behavior. Only the
+drivers whose dependencies you install are exposed, and `diagnose()` tells the agent
+exactly what's missing or unreachable when something doesn't work.
 
-> **Pairs with [techmanual.ai](https://techmanual.ai).** An agent with LabLink
-> alone handles common hardware well using its own knowledge. Add techmanual.ai —
-> a searchable index of manufacturer manuals and SCPI references — and the agent
-> can look up the right command for an unfamiliar instrument, send it via LabLink,
-> observe the response, and iterate. The two are designed to be used together;
-> neither requires the other.
+> **Pairs with [techmanual.ai](https://techmanual.ai).** An agent with LabLink alone
+> handles common hardware well using its own knowledge. Add techmanual.ai — a searchable
+> index of manufacturer manuals and SCPI references — and the agent can look up the right
+> command for an unfamiliar instrument, send it via LabLink, observe the response, and
+> iterate. The two are designed to be used together; neither requires the other.
 
 ---
 
-## Install
+## Supported Protocols
+
+Each device is addressed by an **alias** whose config `type` field selects the driver.
+Per-driver tools register only when that driver's dependencies are installed.
+
+| Protocol | `type` | Transport | Operation tools | Extra | Hardware-validated |
+|----------|--------|-----------|-----------------|-------|:------------------:|
+| **VISA / SCPI** | `visa` | PyVISA (USB-TMC, TCPIP, GPIB, Serial) | `visa_query`, `visa_write` | `[visa]` | ✅ |
+| **SSH** | `ssh` | Paramiko | `ssh_exec`, `ssh_shell_session`, `ssh_start_stream`, `ssh_read_stream`, `ssh_stop_stream` | `[ssh]` | ✅ |
+| **REST** | `rest` | httpx | `rest_get`, `rest_post`, `rest_put`, `rest_patch`, `rest_delete` | `[rest]` | ✅ |
+| **Serial** | `serial` | pyserial (RS232/RS422/RS485) | `serial_query`, `serial_write`, `serial_read`, `serial_flush` | `[serial]` | ⚪ |
+| **Python shell** | `python_shell` | subprocess REPL | `python_shell_exec`, `python_shell_eval` | `[python_shell]` | ✅ |
+
+An `external` routing stub also lets a device be handled by a vendor-supplied MCP server,
+surfacing routing hints to the agent on `connect()`.
+
+> **Legend** — ✅ exercised end-to-end on real hardware · ⚪ covered by unit tests with the
+> driver library mocked (real use needs real hardware).
+
+---
+
+## 📦 Install
 
 ```bash
 pip install lablink-mcp          # core only (no drivers)
@@ -52,7 +105,7 @@ pip install lablink-mcp[all]     # all drivers
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Create a device config
 
@@ -293,6 +346,8 @@ contract, dispatch model, and a step-by-step guide to adding a new driver.
 Adding a driver requires no changes to `lablink/mcp_server.py` or `lablink/cli.py` — just a new
 `lablink/interfaces/<type>/` package and one line in each registry.
 
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
 ---
 
 ## Running Tests
@@ -314,3 +369,9 @@ All tests mock hardware drivers — no real instruments required.
 | `LABLINK_VISA_BACKEND` | `@py` | pyvisa backend (`@py` or `@ni`) |
 | `LABLINK_LOG_DIR` | `~/.lablink/logs/` | Event log directory; set to `""` to disable |
 | `TMAI_API_KEY` | — | techmanual.ai API key for agent-directed manual lookups |
+
+---
+
+## License
+
+LabLink is released under the [MIT License](LICENSE).
