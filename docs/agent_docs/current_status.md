@@ -1,16 +1,15 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 1 + External driver — SSH shipped; external MCP routing stub added**
+**LabLink Phase 2 Complete — REST driver shipped (VISA + SSH + REST + external)**
 
-Phase 1 adds the SSH driver as the first new driver on top of the multi-driver
-core. The dispatch architecture is now validated for a protocol with genuinely
-different semantics from VISA. Phase 1.5 (SSH streaming) is the next logical
-step but is gated on real-world feedback per the plan's kill criteria.
+Phase 1.5 (SSH streaming) deprioritized; held as a tech-debug item per
+developer direction. Phase 2 (REST driver) shipped ahead of it.
 
 Phase 0c finished the peripheral cleanup on top of the 0b core; all of Phase 0
 (migration, architectural core, cleanup) is now done. The codebase is a
-multi-driver dispatch system with VISA and SSH as the v1 drivers so far:
+multi-driver dispatch system with VISA, SSH, REST, and external as the current
+drivers:
 - `lablink/base.py` — data models, config dataclasses (`DriverConfig` +
   `AuthConfig`/`DocumentedConfig` mixins, all `kw_only=True`),
   `Session[ConfigT]`, the `LabLinkDriver[ConfigT]` ABC.
@@ -18,6 +17,9 @@ multi-driver dispatch system with VISA and SSH as the v1 drivers so far:
   `visa_write` (tools) and the `lablink visa ...` CLI subgroup.
 - SSH in `lablink/interfaces/ssh/` on the ABC; self-registers `ssh_exec` /
   `ssh_shell_session` (tools) and the `lablink ssh exec ...` CLI subgroup.
+- REST in `lablink/interfaces/rest/` on the ABC; self-registers `rest_get` /
+  `rest_post` / `rest_put` / `rest_patch` / `rest_delete` (tools) and the
+  `lablink rest get/post ...` CLI subgroup.
   `SshDriverConfig(DriverConfig, AuthConfig)`; supports `none`, `ssh_key`,
   `ssh_password`, `basic` auth types.
 - Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
@@ -25,7 +27,7 @@ multi-driver dispatch system with VISA and SSH as the v1 drivers so far:
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**120/120 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH. Both the 0b
+**162/162 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST. Both the 0b
 and 0c exit gates are MET (see `implementation_log.md`); the VISA path was
 validated end-to-end on the real Siglent SDS1104X-E. SSH validated by unit
 tests (no hardware required; paramiko mocked via `patch("paramiko.SSHClient")`).
@@ -33,9 +35,8 @@ tests (no hardware required; paramiko mocked via `patch("paramiko.SSHClient")`).
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Next phase: 1.5 — SSH streaming (gated on real Phase 1 feedback).** Or Phase 2
-(REST driver) if SSH streaming is deprioritized. See `lablink_plan.md` §13
-kill-criteria for the re-evaluation gate.
+**Next phase: Phase 3 (serial driver) or Phase 4 (python_shell).** Phase 1.5
+(SSH streaming) deprioritized as a tech-debug item.
 
 ---
 
@@ -48,6 +49,7 @@ kill-criteria for the re-evaluation gate.
 - `lablink/interfaces/__init__.py` — `DRIVER_REGISTRY` + `DRIVER_CONFIG_REGISTRY`
 - `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig`
 - `lablink/interfaces/ssh/` — `SshDriver` + `SshDriverConfig`
+- `lablink/interfaces/rest/` — `RestDriver` + `RestDriverConfig(DriverConfig, AuthConfig)`
 - `lablink/event_logger.py` — JSONL event log; §6.4 canonical-field contract
 - `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
 - `cli.py` — shared subcommands + per-driver subgroups (`lablink visa ...`); `lablink`
@@ -55,8 +57,10 @@ kill-criteria for the re-evaluation gate.
   `~/.agentlink/instruments/` auto-migrated on first run
 - `examples/configs/visa_scope.toml` (carries `type = "visa"`)
 - `examples/configs/ssh_pi.toml` (carries `type = "ssh"`)
+- `examples/configs/rest_daq.toml` (carries `type = "rest"`)
 - `tests/` — `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
-  `test_fastmcp_late_registration`, `interfaces/test_visa` (76 tests)
+  `test_fastmcp_late_registration`, `interfaces/test_visa`, `interfaces/test_ssh`,
+  `interfaces/test_rest` (162 tests)
 - `CHANGELOG.md`, `docs/lablink_plan.md` (authoritative), `docs/agent_docs/`
 - `docs/archive/` — `agent-bootstrap.md`, `current_status_agentlink_visa.md`
 
@@ -89,6 +93,32 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[REST smoke test — live]** End-to-end MCP tool test against
+  `jsonplaceholder` (public REST API, `auth_type = "none"`). All five REST tools
+  exercised via MCP: `rest_get` (single resource + query params), `rest_post`
+  (201 + `Location` header), `rest_put` (200, full replace), `rest_patch` (200,
+  partial update), `rest_delete` (200, empty body). Every call returned
+  `success=True` with correct `status_code` and `decoded` JSON. Driver behavior
+  confirmed: HTTP 4xx/5xx pass through as `success=True` (agent reads
+  `status_code`); `success=False` reserved for network-level failures.
+
+- **2026-05-29** — **[Phase 2 Complete]** REST driver shipped. Added
+  `lablink/interfaces/rest/` with `RestDriverConfig(DriverConfig, AuthConfig)` and
+  `RestDriver` implementing the full `LabLinkDriver[RestDriverConfig]` ABC. Tools:
+  `rest_get` (params + per-request headers), `rest_post`, `rest_put`, `rest_patch`
+  (JSON body), `rest_delete`. All tools return `ReadResult` with
+  `metadata={"status_code", "headers"}`; HTTP 4xx/5xx are `success=True` — the
+  agent checks `status_code`. `success=False` reserved for network-level failures.
+  CLI: `lablink rest get <alias> <path>` and `lablink rest post <alias> <path>
+  --body '<json>'`. Auth: `none`, `bearer` (`Authorization: Bearer …`),
+  `api_key` (`X-API-Key: …`), `basic` (httpx.BasicAuth). All credentials from
+  env vars via `AuthConfig`. `verify_ssl` field on config (default `True`).
+  Registered in both `DRIVER_REGISTRY` and `DRIVER_CONFIG_REGISTRY`. pyproject:
+  added `[rest]` (httpx>=0.27) extra; updated `[all]` and `[dev]`. 42 new REST
+  tests via `patch("httpx.Client")`; 162/162 pass. Added
+  `examples/configs/rest_daq.toml`. Phase 1.5 (SSH streaming) deprioritized as a
+  tech-debug item per developer direction.
 
 - **2026-05-29** — **[External driver]** Added `type = "external"` routing stub for
   devices controlled by manufacturer-supplied MCP servers. `ExternalDriverConfig`

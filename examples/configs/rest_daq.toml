@@ -1,0 +1,28 @@
+# Example REST API device config
+# Copy to ~/.lablink/devices/daq_local.toml and edit as needed.
+
+type        = "rest"
+alias       = "daq_local"
+description = "Local DAQ REST API"
+timeout_ms  = 10000
+
+base_url    = "https://daq.local/api/v1"
+verify_ssl  = true
+
+# Auth — pick one block and remove the others.
+
+# No auth (default):
+auth_type = "none"
+
+# Bearer token:
+# auth_type       = "bearer"
+# auth_token_env  = "DAQ_API_TOKEN"   # export DAQ_API_TOKEN=<your-token>
+
+# API key (sent as X-API-Key header):
+# auth_type       = "api_key"
+# auth_token_env  = "DAQ_API_KEY"
+
+# HTTP Basic auth:
+# auth_type         = "basic"
+# auth_username_env = "DAQ_USERNAME"
+# auth_password_env = "DAQ_PASSWORD"
