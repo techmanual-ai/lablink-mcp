@@ -1,0 +1,25 @@
+# Example serial device config (RS232 / RS422 / RS485)
+# Copy to ~/.lablink/devices/<alias>.toml and edit as needed.
+# Alias convention: <role>_<device> — lowercase with underscores.
+
+type        = "serial"
+alias       = "arduino_uno"
+description = "Arduino Uno on USB-serial adapter"
+timeout_ms  = 2000
+
+# OS path to the serial port.
+#   macOS:   /dev/tty.usbserial-XXXX  or  /dev/ttyUSB0
+#   Linux:   /dev/ttyUSB0  or  /dev/ttyACM0
+#   Windows: COM3
+serial_port = "/dev/tty.usbserial-0001"
+
+baud_rate         = 115200
+data_bits         = 8
+parity            = "none"   # none | even | odd | mark | space
+stop_bits         = 1        # 1 or 2
+
+# Line termination used when sending and reading.
+# Most instruments and microcontrollers use "\n" (LF).
+# Use "\r\n" (CRLF) for legacy instruments that require it.
+read_termination  = "\n"
+write_termination = "\n"

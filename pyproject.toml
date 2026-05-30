@@ -21,8 +21,9 @@ lablink-mcp = "mcp_server:main"
 visa = ["pyvisa>=1.14", "pyvisa-py>=0.7"]
 ssh = ["paramiko>=3.0"]
 rest = ["httpx>=0.27"]
-all = ["lablink-mcp[visa,ssh,rest]"]
-dev = ["pytest>=8.0", "pyvisa>=1.14", "pyvisa-py>=0.7", "paramiko>=3.0", "httpx>=0.27"]
+serial = ["pyserial>=3.5"]
+all = ["lablink-mcp[visa,ssh,rest,serial]"]
+dev = ["pytest>=8.0", "pyvisa>=1.14", "pyvisa-py>=0.7", "paramiko>=3.0", "httpx>=0.27", "pyserial>=3.5"]
 
 [tool.hatch.build.targets.wheel]
 include = ["lablink/", "mcp_server.py", "cli.py"]

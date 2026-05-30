@@ -1,7 +1,7 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 2 Complete — REST driver shipped (VISA + SSH + REST + external)**
+**LabLink Phase 3 Complete — Serial driver shipped (VISA + SSH + REST + Serial + external)**
 
 Phase 1.5 (SSH streaming) deprioritized; held as a tech-debug item per
 developer direction. Phase 2 (REST driver) shipped ahead of it.
@@ -22,21 +22,27 @@ drivers:
   `lablink rest get/post ...` CLI subgroup.
   `SshDriverConfig(DriverConfig, AuthConfig)`; supports `none`, `ssh_key`,
   `ssh_password`, `basic` auth types.
+- Serial in `lablink/interfaces/serial/` on the ABC; self-registers
+  `serial_query` / `serial_write` / `serial_read` / `serial_flush` (tools) and
+  the `lablink serial query/write ...` CLI subgroup. `SerialDriverConfig(DriverConfig)`;
+  no auth mixin (serial is inherently local/physical). Covers RS232/RS422/RS485
+  via pyserial; parity (`none/even/odd/mark/space`) and termination are config fields.
 - Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
   in `mcp_server.py` dispatch via `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY`.
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**162/162 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST. Both the 0b
+**200/200 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH + 5 REST + 4 Serial. Both the 0b
 and 0c exit gates are MET (see `implementation_log.md`); the VISA path was
-validated end-to-end on the real Siglent SDS1104X-E. SSH validated by unit
-tests (no hardware required; paramiko mocked via `patch("paramiko.SSHClient")`).
+validated end-to-end on the real Siglent SDS1104X-E. SSH and REST validated by
+unit tests. Serial validated by unit tests (no hardware required; pyserial mocked
+via `patch("serial.Serial")`).
 
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Next phase: Phase 3 (serial driver) or Phase 4 (python_shell).** Phase 1.5
-(SSH streaming) deprioritized as a tech-debug item.
+**Next phase: Phase 4 (python_shell).** Phase 1.5 (SSH streaming) deprioritized
+as a tech-debug item.
 
 ---
 
@@ -50,6 +56,7 @@ implementation log is `docs/agent_docs/implementation_log.md`.
 - `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig`
 - `lablink/interfaces/ssh/` — `SshDriver` + `SshDriverConfig`
 - `lablink/interfaces/rest/` — `RestDriver` + `RestDriverConfig(DriverConfig, AuthConfig)`
+- `lablink/interfaces/serial/` — `SerialDriver` + `SerialDriverConfig(DriverConfig)`
 - `lablink/event_logger.py` — JSONL event log; §6.4 canonical-field contract
 - `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
 - `cli.py` — shared subcommands + per-driver subgroups (`lablink visa ...`); `lablink`
@@ -58,6 +65,7 @@ implementation log is `docs/agent_docs/implementation_log.md`.
 - `examples/configs/visa_scope.toml` (carries `type = "visa"`)
 - `examples/configs/ssh_pi.toml` (carries `type = "ssh"`)
 - `examples/configs/rest_daq.toml` (carries `type = "rest"`)
+- `examples/configs/serial_device.toml` (carries `type = "serial"`)
 - `tests/` — `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
   `test_fastmcp_late_registration`, `interfaces/test_visa`, `interfaces/test_ssh`,
   `interfaces/test_rest` (162 tests)
@@ -93,6 +101,21 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 3 Complete]** Serial driver shipped. Added
+  `lablink/interfaces/serial/` with `SerialDriverConfig(DriverConfig)` and
+  `SerialDriver` implementing the full `LabLinkDriver[SerialDriverConfig]` ABC.
+  Tools: `serial_query` (write + `read_until` with configured termination;
+  `timed_out` flag when terminator not received), `serial_write` (write-only;
+  `metadata={"bytes_written"}`), `serial_read` (drain OS buffer with timeout;
+  `timed_out=True` on empty read), `serial_flush` (clears input + output buffers;
+  returns `Result`). CLI: `lablink serial query <alias> "<cmd>"` and
+  `lablink serial write <alias> "<cmd>"`. No `AuthConfig` mixin — serial is
+  inherently local/physical. Parity map: `none/even/odd/mark/space` → pyserial
+  single-char constants; case-insensitive. Port existence check on POSIX only
+  (skipped on Windows COM ports). pyproject: added `[serial]` (pyserial>=3.5)
+  extra; updated `[all]` and `[dev]`. 38 new serial tests via
+  `patch("serial.Serial")`; 200/200 pass. Added `examples/configs/serial_device.toml`.
 
 - **2026-05-29** — **[REST smoke test — live]** End-to-end MCP tool test against
   `jsonplaceholder` (public REST API, `auth_type = "none"`). All five REST tools
