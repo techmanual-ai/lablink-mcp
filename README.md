@@ -45,7 +45,7 @@ LabLink gives an AI agent direct, structured access to lab hardware and services
 - **`diagnose()`** surfaces exactly what is missing or unreachable before the agent tries to use it
 - **Extensible** — add a driver with no changes to the core server or CLI
 
-<img src="docs/assets/banner.svg" alt="LabLink — one agent, every interface" width="100%">
+<img src="docs/assets/banner.svg" alt="LabLink — one agent, every interface">
 
 ---
 
@@ -78,13 +78,6 @@ pip install lablink-mcp[visa]    # + PyVISA
 pip install lablink-mcp[ssh]     # + Paramiko
 pip install lablink-mcp[all]     # all drivers
 ```
-
-> **Not yet on PyPI?** Clone the repo and install locally:
-> ```bash
-> git clone https://github.com/techmanual-ai/lablink-mcp
-> cd lablink-mcp
-> pip install -e ".[all]"
-> ```
 
 ---
 
