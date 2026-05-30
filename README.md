@@ -348,3 +348,28 @@ All tests mock hardware drivers — no real instruments required.
 ## License
 
 LabLink is released under the [MIT License](LICENSE).
+
+<!-- MCP server VISA instruments · MCP server SCPI · MCP server GPIB · MCP server SSH ·
+     MCP server serial device · MCP server REST API · MCP server oscilloscope ·
+     MCP server Raspberry Pi · MCP server RS-232 · MCP server RS-485 ·
+     MQTT MCP server · Modbus MCP server · WebSocket MCP server · OPC-UA MCP server ·
+     CAN bus MCP server · AI agent lab instrument control · AI agent SCPI ·
+     AI agent VISA · AI agent oscilloscope · AI agent power supply · AI agent DMM ·
+     AI agent NI-DAQmx · AI agent nidaqmx · AI agent PicoScope · AI agent serial port ·
+     Claude lab automation · LLM instrument control · lab automation MCP ·
+     automated test equipment AI · SCPI automation AI · instrument control AI agent ·
+     multi-protocol MCP server · hardware control MCP server · FastMCP lab instruments ·
+     bench instrument AI · give AI agent hardware access · AI test automation Python ·
+     vendor SDK AI agent · AI agent function generator · AI agent spectrum analyzer ·
+     AI agent signal analyzer · AI agent bench instrument ·
+     Keysight MCP server · Keysight oscilloscope MCP · Keysight SCPI AI ·
+     Keysight InfiniiVision MCP · Keysight signal generator MCP · Keysight power supply MCP ·
+     Tektronix MCP server · Tektronix SCPI automation · Tektronix oscilloscope AI ·
+     Rigol MCP server · Rigol oscilloscope MCP · Rigol DS1054Z MCP ·
+     Siglent MCP server · Siglent oscilloscope AI agent ·
+     Rohde Schwarz MCP server · R&S MCP server · R&S oscilloscope AI ·
+     Fluke MCP server · Fluke multimeter AI agent ·
+     National Instruments MCP · NI DAQ MCP server · NI-DAQmx MCP ·
+     Yokogawa MCP server · Anritsu MCP server · LeCroy MCP server ·
+     Thorlabs MCP server · Newport MCP server · BK Precision MCP server ·
+     Arduino serial MCP · Arduino MCP server · microcontroller MCP server -->

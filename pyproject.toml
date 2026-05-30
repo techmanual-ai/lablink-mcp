@@ -10,16 +10,30 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 keywords = [
-    "mcp",
-    "ai-agents",
-    "lab-automation",
-    "visa",
-    "scpi",
-    "instrument-control",
-    "test-equipment",
-    "ssh",
-    "serial",
-    "hardware",
+    # core identity
+    "mcp", "mcp-server", "fastmcp",
+    # lab / instrument
+    "lab-automation", "lab-instruments", "instrument-control", "test-equipment",
+    "bench-instrument", "test-automation", "automated-test-equipment",
+    # protocols shipped
+    "visa", "scpi", "gpib", "pyvisa",
+    "ssh", "paramiko",
+    "rest", "rest-api",
+    "serial", "rs232", "rs485",
+    "python-shell",
+    # protocols seeded
+    "mqtt", "modbus", "opc-ua", "websocket", "can-bus",
+    # hardware types
+    "oscilloscope", "dmm", "power-supply", "function-generator",
+    "spectrum-analyzer", "signal-analyzer",
+    # platforms / SDKs
+    "raspberry-pi", "nidaqmx", "picoscope", "ni-visa",
+    # instrument brands
+    "keysight", "tektronix", "rigol", "siglent", "rohde-schwarz",
+    "fluke", "national-instruments", "lecroy", "anritsu", "yokogawa",
+    "thorlabs", "newport", "arduino", "bk-precision",
+    # ai / agent
+    "ai-agents", "hardware-control", "hardware", "iot",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
