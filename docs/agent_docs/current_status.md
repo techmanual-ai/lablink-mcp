@@ -1,34 +1,41 @@
 # Project Status
 
 ## Current Phase
-**LabLink Phase 0 Complete (0a + 0b + 0c) — Ready for Phase 1 (SSH driver)**
+**LabLink Phase 1 Complete — SSH driver (exec-only) shipped**
+
+Phase 1 adds the SSH driver as the first new driver on top of the multi-driver
+core. The dispatch architecture is now validated for a protocol with genuinely
+different semantics from VISA. Phase 1.5 (SSH streaming) is the next logical
+step but is gated on real-world feedback per the plan's kill criteria.
 
 Phase 0c finished the peripheral cleanup on top of the 0b core; all of Phase 0
 (migration, architectural core, cleanup) is now done. The codebase is a
-multi-driver dispatch system with VISA as the only v1 driver so far:
+multi-driver dispatch system with VISA and SSH as the v1 drivers so far:
 - `lablink/base.py` — data models, config dataclasses (`DriverConfig` +
   `AuthConfig`/`DocumentedConfig` mixins, all `kw_only=True`),
   `Session[ConfigT]`, the `LabLinkDriver[ConfigT]` ABC.
 - VISA in `lablink/interfaces/visa/` on the ABC; self-registers `visa_query` /
   `visa_write` (tools) and the `lablink visa ...` CLI subgroup.
+- SSH in `lablink/interfaces/ssh/` on the ABC; self-registers `ssh_exec` /
+  `ssh_shell_session` (tools) and the `lablink ssh exec ...` CLI subgroup.
+  `SshDriverConfig(DriverConfig, AuthConfig)`; supports `none`, `ssh_key`,
+  `ssh_password`, `basic` auth types.
 - Shared lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`)
   in `mcp_server.py` dispatch via `DRIVER_REGISTRY` / `DRIVER_CONFIG_REGISTRY`.
 - `event_logger` (renamed from `scpi_logger`) with the §6.4 canonical-field
   contract; multi-driver `_INSTRUCTIONS` with a runtime loaded-driver count.
 
-**76/76 tests pass.** Tool surface: 4 shared + 2 VISA. Both the 0b and 0c
-exit gates are MET (see `implementation_log.md`); the VISA path was validated
-end-to-end on the real Siglent SDS1104X-E.
+**105/105 tests pass.** Tool surface: 4 shared + 2 VISA + 2 SSH. Both the 0b
+and 0c exit gates are MET (see `implementation_log.md`); the VISA path was
+validated end-to-end on the real Siglent SDS1104X-E. SSH validated by unit
+tests (no hardware required; paramiko mocked via `patch("paramiko.SSHClient")`).
 
 **Authoritative architectural spec:** `docs/lablink_plan.md`. The per-task
 implementation log is `docs/agent_docs/implementation_log.md`.
 
-**Next phase: 1 — SSH driver (exec-only).** First *new* driver; validates the
-dispatch architecture for a protocol with genuinely different semantics. Tools
-`ssh_exec` + `ssh_shell_session`; deps `paramiko`; `SshDriverConfig(DriverConfig,
-AuthConfig)`. Streaming is deferred to Phase 1.5. See `lablink_plan.md` §9
-Phase 1. Per §13 kill-criteria, re-confirm the dispatch model feels right
-before building it (the 0c CLI/tool work is good evidence it does).
+**Next phase: 1.5 — SSH streaming (gated on real Phase 1 feedback).** Or Phase 2
+(REST driver) if SSH streaming is deprioritized. See `lablink_plan.md` §13
+kill-criteria for the re-evaluation gate.
 
 ---
 
@@ -39,13 +46,15 @@ before building it (the 0c CLI/tool work is good evidence it does).
 - `lablink/session.py` — protocol-agnostic session registry (three-state lookup)
 - `lablink/config.py` — generic loader via `DRIVER_CONFIG_REGISTRY`; auto-migration
 - `lablink/interfaces/__init__.py` — `DRIVER_REGISTRY` + `DRIVER_CONFIG_REGISTRY`
-- `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig` (only v1 driver so far)
+- `lablink/interfaces/visa/` — `VisaDriver` + `VisaDriverConfig`
+- `lablink/interfaces/ssh/` — `SshDriver` + `SshDriverConfig`
 - `lablink/event_logger.py` — JSONL event log; §6.4 canonical-field contract
 - `mcp_server.py` — shared lifecycle tools + per-driver registration; `lablink-mcp`
 - `cli.py` — shared subcommands + per-driver subgroups (`lablink visa ...`); `lablink`
 - `~/.lablink/devices/<alias>.toml` config location; legacy
   `~/.agentlink/instruments/` auto-migrated on first run
 - `examples/configs/visa_scope.toml` (carries `type = "visa"`)
+- `examples/configs/ssh_pi.toml` (carries `type = "ssh"`)
 - `tests/` — `test_config`, `test_logger`, `test_shared_tools`, `test_dispatch`,
   `test_fastmcp_late_registration`, `interfaces/test_visa` (76 tests)
 - `CHANGELOG.md`, `docs/lablink_plan.md` (authoritative), `docs/agent_docs/`
@@ -80,6 +89,22 @@ For the mapping of current code → target code, see `system_architecture.md` §
 ---
 
 ## Recent History
+
+- **2026-05-29** — **[Phase 1 Complete]** SSH driver shipped as the first new
+  driver on the multi-driver core. Added `lablink/interfaces/ssh/` with
+  `SshDriverConfig(DriverConfig, AuthConfig)` and `SshDriver` implementing the
+  full `LabLinkDriver[SshDriverConfig]` ABC. Tools: `ssh_exec` (non-interactive
+  exec channel; `metadata={exit_code, stderr}`) and `ssh_shell_session`
+  (per-call PTY; returns full terminal transcript). CLI: `lablink ssh exec
+  <alias> "<command>"`. All paramiko imports are lazy; `check_python_deps()`
+  uses `find_spec`. Auth supports `none`, `ssh_key`, `ssh_password`, `basic`.
+  Diagnose: TCP reachability + key file presence + auth config validation.
+  Registered in both `DRIVER_REGISTRY` and `DRIVER_CONFIG_REGISTRY`. Updated
+  `pyproject.toml`: pyvisa moved from core deps to `[visa]` extra; added
+  `[ssh]` (paramiko>=3.0), `[all]`, `[dev]` extras — matches `lablink_plan.md`
+  §2.8 dep architecture. 105/105 tests pass (29 new SSH tests via
+  `patch("paramiko.SSHClient")`). Added `examples/configs/ssh_pi.toml`.
+  Hardware smoke test: pending real SSH target.
 
 - **2026-05-29** — **[Phase 0c Complete]** Peripheral cleanup on top of the 0b
   core. Renamed `scpi_logger.py` → `event_logger.py` and formalized the §6.4

@@ -9,8 +9,6 @@ description = "MCP server for AI agent control of test and measurement equipment
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=2.0",
-    "pyvisa>=1.14",
-    "pyvisa-py>=0.7",
     "click>=8.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
@@ -20,7 +18,10 @@ lablink = "cli:cli"
 lablink-mcp = "mcp_server:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+visa = ["pyvisa>=1.14", "pyvisa-py>=0.7"]
+ssh = ["paramiko>=3.0"]
+all = ["lablink-mcp[visa,ssh]"]
+dev = ["pytest>=8.0", "pyvisa>=1.14", "pyvisa-py>=0.7", "paramiko>=3.0"]
 
 [tool.hatch.build.targets.wheel]
 include = ["lablink/", "mcp_server.py", "cli.py"]

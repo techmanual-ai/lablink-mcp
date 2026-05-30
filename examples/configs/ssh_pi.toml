@@ -1,0 +1,26 @@
+# Example SSH device config — Raspberry Pi or any Linux host.
+# Save to ~/.lablink/devices/<alias>.toml
+# Alias convention: <role>_<host>, lowercase with underscores.
+
+type        = "ssh"
+alias       = "pi_lab"
+description = "Lab Raspberry Pi — data acquisition host"
+timeout_ms  = 10000
+
+host     = "192.168.1.42"
+port     = 22
+username = "pi"
+
+# Auth: choose one of the blocks below and delete the others.
+
+# --- SSH key (recommended) ---
+auth_type        = "ssh_key"
+auth_ssh_key_path = "~/.ssh/id_rsa"          # tilde expanded at load time
+# auth_ssh_passphrase_env = "SSH_PASSPHRASE"  # uncomment if key is passphrase-protected
+
+# --- Password ---
+# auth_type        = "ssh_password"
+# auth_password_env = "PI_PASSWORD"           # env var name; never put the value here
+
+# --- SSH agent / default keys (no explicit credential) ---
+# auth_type = "none"

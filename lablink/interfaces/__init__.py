@@ -8,14 +8,17 @@ drift.
 """
 
 from lablink.base import DriverConfig, LabLinkDriver
+from lablink.interfaces.ssh import SshDriver, SshDriverConfig
 from lablink.interfaces.visa import VisaDriver, VisaDriverConfig
 
 DRIVER_REGISTRY: dict[str, type[LabLinkDriver]] = {
     "visa": VisaDriver,
+    "ssh": SshDriver,
 }
 
 DRIVER_CONFIG_REGISTRY: dict[str, type[DriverConfig]] = {
     "visa": VisaDriverConfig,
+    "ssh": SshDriverConfig,
 }
 
 # Runtime check at import. Uses if/raise rather than assert because Python -O
