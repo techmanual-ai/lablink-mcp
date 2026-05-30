@@ -1,8 +1,6 @@
 <!-- mcp-name: io.github.techmanual-ai/lablink-mcp -->
 
-<!-- Drop a banner image here when you have one, e.g.:
-<p align="center"><img src="docs/assets/banner.png" alt="LabLink" width="640"></p>
--->
+<p align="center"><img src="docs/assets/banner.svg" alt="LabLink" width="640"></p>
 
 <h1 align="center">🔬 LabLink</h1>
 
