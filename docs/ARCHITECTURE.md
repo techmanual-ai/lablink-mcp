@@ -137,6 +137,14 @@ the same dep gating as the MCP server.
 **`lablink/event_logger.py`** — appends one JSONL entry per tool call to
 `~/.lablink/logs/YYYY-MM-DD.jsonl`. Never raises (§8.4).
 
+**`lablink/redaction.py`** — shared credential scrubber. `secret_values(config)`
+resolves a config's `auth_*_env` fields to their live `os.environ` values (values
+below a short-secret floor are excluded — see §8.4); `redact(text, secrets)`
+replaces any occurrence with `***`; `contains_secret(text, secrets)` is the cheap
+detector for the agent-facing warning. The scrub itself runs at the logging
+boundary (`event_logger.log_event`, §8.4), not at each call site. Stdlib-only;
+depends on nothing else in `lablink`.
+
 ---
 
 ## 5. Data Models
@@ -359,6 +367,32 @@ set it to `""` to disable logging.
 - **Driver-specific extras** pass through freely (`command`/`response` for VISA,
   `verb`/`path`/`status_code` for REST, etc.). Drivers must not emit fields that
   make no sense for their protocol.
+
+**Credential redaction.** Free-form log fields can carry a secret the agent
+inlined by mistake (e.g. a password in an `ssh_exec` command, a token in a REST
+query path or echoed error). Redaction happens **at the logging boundary**: a
+driver passes the secrets in scope for the call via `log_event(..., secrets=...)`
+(from `redaction.secret_values(config)`), and `log_event` scrubs every free-form
+string field — `error` and each string-valued extra — to `***` before
+serialization. Centralizing it at the single write point means a driver cannot
+leak a known credential by forgetting to wrap an individual field; the canonical
+`op`/`alias` fields are structural and never scrubbed. The result returned to the
+agent is left intact (the agent already holds the secret); only the durable log
+is scrubbed. The SSH tools additionally set `metadata.security_warning` (via
+`redaction.contains_secret`) when a known credential is detected inline.
+
+Two limitations are accepted by design, not silently relied upon:
+
+- **Known secrets only.** Only values held in the config's `auth_*_env` variables
+  are in the secret set; a secret the agent invents from another source passes
+  through. The agent-facing tool docstrings instruct agents never to inline
+  secrets — redaction is the safety net, not the front line.
+- **Literal-value matching, with a short-secret floor.** A secret is matched as
+  its raw `os.environ` value, so a transformed copy (percent-encoded in a query
+  string, base64 in a Basic-auth header) will not match. Values shorter than
+  `redaction._MIN_SECRET_LEN` are excluded entirely: blanket substring
+  replacement of a 1–3 character value corrupts unrelated log text far more than
+  it protects.
 
 ---
 

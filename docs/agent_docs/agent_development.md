@@ -80,6 +80,8 @@ Never hardcode a timeout. Config `timeout_ms` is the default; the per-call kwarg
 ### Event logging
 Every tool must call `event_logger.log_event(op=..., alias=..., ...)` at every success and failure return point. Logging must never raise — `event_logger` no-ops on filesystem errors.
 
+If a tool logs any field that could contain a credential the agent inlined (a `command`, a URL `path`, an `error` that echoes either), pass `secrets=redaction.secret_values(config)` to `log_event`. The scrub happens at that boundary, so you never hand-redact individual fields — and you cannot leak a known secret by forgetting one. Use `redaction.contains_secret(text, secrets)` if you also want to set a `metadata.security_warning` on the agent-facing result. See `docs/ARCHITECTURE.md` §8.4.
+
 ### Streaming drivers
 The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tools are the reference streaming implementation. Any new streaming driver must follow the five-rule contract in `docs/ARCHITECTURE.md` §11 (bounded queue with documented overflow, thread setup in `connect()` or per-driver `start_*` tool, thread teardown in `disconnect()` with `join(timeout=2.0)`, exception isolation via `session.metadata["stream_error"]`, documented batching semantics in the read tool's docstring).
 
@@ -124,6 +126,21 @@ When your changes are non-trivial:
 ## 7. Agent Behavior & Interaction
 
 - **Ambiguity:** always ask clarifying questions before implementation. Do not guess.
+- **Never invent remote facts.** IPs, hostnames, ports, file paths, and device
+  state must be discovered, not assumed — from `connect()` metadata (e.g.
+  `peer_address`), a `diagnose()`, or a read command (`hostname -I`, `ls`). A
+  guessed value that happens to be wrong is a silent failure; treat inventing one
+  as a bug.
+- **Operating remote devices:** never inline a credential in a command or path
+  (e.g. `echo $PASS | sudo -S ...`). Reference secrets by environment variable,
+  exactly as config does. The SSH/REST drivers redact known credentials from the
+  event log and warn, but that is a backstop, not permission. For privileged SSH
+  work prefer key-based auth, an askpass helper, or passwordless sudo.
+- **Don't batch interdependent remote steps in one turn.** Sequential
+  dependencies (install → pull → run → configure) cannot run in parallel — issue
+  one step, confirm its result, then the next. Firing them together (plus
+  duplicate "is it done yet?" probes) produces thrash and masks the first
+  failure.
 - **Scope discipline:** do not add features, refactor, or introduce abstractions beyond what the current task requires. Scope (drivers and non-goals) is defined in `README.md`; architecture in `docs/ARCHITECTURE.md`.
 - **Design decisions:** the design principles in `docs/ARCHITECTURE.md` §2 are settled — do not revisit them without explicit instruction from the lead developer.
 - **Context documents:** be concise. Favor detail over fluff but minimize context window usage.

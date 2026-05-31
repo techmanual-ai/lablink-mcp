@@ -286,6 +286,33 @@ When this field is set, `connect()` returns the IDs so the agent can fetch relev
 
 ---
 
+## Control your home (Home Assistant)
+
+[Home Assistant](https://www.home-assistant.io/) is a local-first, open-source smart-home hub. It unifies thousands of devices across ecosystems — Apple Home, Alexa, Google, Zigbee, Z-Wave, Matter — behind one local REST API. That means LabLink's existing `rest` driver drives your **whole home** through a single alias; no extra driver to install.
+
+Create a **Long-Lived Access Token** in Home Assistant (Profile → Security → Long-Lived Access Tokens), export it, and point a REST config at your hub:
+
+```toml
+# ~/.lablink/devices/home_assistant.toml
+type        = "rest"
+alias       = "home_assistant"
+timeout_ms  = 10000
+base_url    = "http://homeassistant.local:8123/api"
+auth_type      = "bearer"
+auth_token_env = "HASS_TOKEN"          # export HASS_TOKEN=<your-token>
+```
+
+Then your agent can read and command anything HA manages:
+
+```bash
+lablink rest get  home_assistant /states                 # every entity's state
+lablink rest post home_assistant /services/light/turn_on --body '{"entity_id": "light.kitchen"}'
+```
+
+See [examples/configs/rest_home_assistant.toml](examples/configs/rest_home_assistant.toml) for the full template.
+
+---
+
 ## Scope
 
 LabLink ships five protocol drivers — `visa`, `ssh`, `rest`, `serial`, and
@@ -372,4 +399,10 @@ LabLink is released under the [MIT License](LICENSE).
      National Instruments MCP · NI DAQ MCP server · NI-DAQmx MCP ·
      Yokogawa MCP server · Anritsu MCP server · LeCroy MCP server ·
      Thorlabs MCP server · Newport MCP server · BK Precision MCP server ·
-     Arduino serial MCP · Arduino MCP server · microcontroller MCP server -->
+     Arduino serial MCP · Arduino MCP server · microcontroller MCP server ·
+     Home Assistant MCP server · MCP server Home Assistant · Home Assistant AI agent ·
+     AI agent smart home · smart home MCP server · control smart home AI ·
+     Home Assistant REST API MCP · AI agent home automation · LLM smart home control ·
+     AI agent smart lights · AI agent thermostat · AI agent smart lock ·
+     Zigbee MCP server · Z-Wave MCP server · Matter MCP server · home automation AI agent -->
+

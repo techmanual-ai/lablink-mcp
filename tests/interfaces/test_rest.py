@@ -172,6 +172,39 @@ class TestConnect:
         assert mock_cls.call_args.kwargs["verify"] is False
 
 
+class TestCredentialRedaction:
+    def test_token_in_path_redacted_from_log(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MY_TOKEN", "tok-secret")
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        cfg = _config(auth_type="bearer", auth_token_env="MY_TOKEN")
+        resp = _mock_response(content_type="text/plain", text="ok")
+        client = _mock_client(resp)
+        _register_session(client, cfg)
+        driver = RestDriver()
+
+        driver.rest_get_impl("test_api", "/data?api_key=tok-secret")
+
+        log_text = next(tmp_path.glob("*.jsonl")).read_text()
+        assert "tok-secret" not in log_text
+        assert "***" in log_text
+
+    def test_token_in_error_redacted_from_log(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MY_TOKEN", "tok-secret")
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        cfg = _config(auth_type="bearer", auth_token_env="MY_TOKEN")
+        client = _mock_client()
+        client.get.side_effect = Exception("boom")
+        _register_session(client, cfg)
+        driver = RestDriver()
+
+        # The error message embeds the full URL, which carries the token.
+        result = driver.rest_get_impl("test_api", "/data?api_key=tok-secret")
+
+        assert result["success"] is False
+        log_text = next(tmp_path.glob("*.jsonl")).read_text()
+        assert "tok-secret" not in log_text
+
+
 # ---------------------------------------------------------------------------
 # disconnect
 # ---------------------------------------------------------------------------

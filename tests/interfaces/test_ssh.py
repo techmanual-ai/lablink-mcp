@@ -176,6 +176,65 @@ class TestConnect:
         assert call_kwargs["key_filename"] == "/home/pi/.ssh/id_rsa"
 
 
+def _exec_client(stdout_bytes: bytes = b"ok\n", exit_code: int = 0) -> MagicMock:
+    client = _mock_client()
+    mock_stdout = MagicMock()
+    mock_stdout.channel.recv_exit_status.return_value = exit_code
+    mock_stdout.read.return_value = stdout_bytes
+    mock_stderr = MagicMock()
+    mock_stderr.read.return_value = b""
+    client.exec_command.return_value = (MagicMock(), mock_stdout, mock_stderr)
+    return client
+
+
+class TestCredentialRedaction:
+    def test_secret_in_command_redacted_from_log(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PI_PASS", "hunter2")
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        cfg = _config(auth_type="ssh_password", auth_password_env="PI_PASS")
+        client = _exec_client()
+        driver = SshDriver()
+        _register_session(client, cfg)
+
+        result = driver.ssh_exec_impl("test_pi", "echo hunter2 | sudo -S id")
+
+        # Returned to the agent: warning attached, real output intact.
+        assert result["success"] is True
+        assert "security_warning" in result["metadata"]
+
+        # Durable log: secret scrubbed, command preserved structurally.
+        log_text = next(tmp_path.glob("*.jsonl")).read_text()
+        assert "hunter2" not in log_text
+        assert "***" in log_text
+        assert "sudo -S id" in log_text
+
+    def test_clean_command_no_warning(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PI_PASS", "hunter2")
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        cfg = _config(auth_type="ssh_password", auth_password_env="PI_PASS")
+        client = _exec_client()
+        driver = SshDriver()
+        _register_session(client, cfg)
+
+        result = driver.ssh_exec_impl("test_pi", "uname -a")
+
+        assert result["success"] is True
+        assert "security_warning" not in result["metadata"]
+
+
+class TestPeerAddress:
+    def test_connect_surfaces_resolved_peer(self):
+        client = _mock_client()
+        client.get_transport.return_value.getpeername.return_value = ("192.168.1.42", 22)
+        driver = SshDriver()
+
+        with patch("paramiko.SSHClient", return_value=client):
+            result = driver.connect(_config())
+
+        assert result.success is True
+        assert result.metadata.get("peer_address") == "192.168.1.42:22"
+
+
 # ---------------------------------------------------------------------------
 # disconnect
 # ---------------------------------------------------------------------------

@@ -73,3 +73,36 @@ class TestLogger:
     def test_get_log_dir_override(self, tmp_path, monkeypatch):
         monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
         assert event_logger.get_log_dir() == tmp_path
+
+
+class TestRedactionAtBoundary:
+    """`secrets=` scrubs every free-form string field before writing (§8.4)."""
+
+    def test_secret_scrubbed_from_extra_and_error(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        event_logger.log_event(
+            op="ssh_exec",
+            alias="pi",
+            success=False,
+            error="failed running echo s3cret-token | sudo -S id",
+            command="echo s3cret-token | sudo -S id",
+            secrets={"s3cret-token"},
+        )
+        entry = json.loads(list(tmp_path.glob("*.jsonl"))[0].read_text().strip())
+        assert "s3cret-token" not in json.dumps(entry)
+        assert entry["command"] == "echo *** | sudo -S id"
+        assert "***" in entry["error"]
+
+    def test_non_string_extras_untouched(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        event_logger.log_event(
+            op="ssh_exec", alias="pi", success=True, exit_code=0, command="ok", secrets={"abc123"}
+        )
+        entry = json.loads(list(tmp_path.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["exit_code"] == 0  # int passed through, not coerced
+
+    def test_no_secrets_writes_verbatim(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LABLINK_LOG_DIR", str(tmp_path))
+        event_logger.log_event(op="ssh_exec", alias="pi", success=True, command="echo hunter2")
+        entry = json.loads(list(tmp_path.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["command"] == "echo hunter2"

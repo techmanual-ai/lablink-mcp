@@ -30,11 +30,36 @@ from lablink.base import (
 )
 from lablink.event_logger import log_event
 from lablink.interfaces.ssh.config import SshDriverConfig
+from lablink.redaction import contains_secret, secret_values
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_SECURITY_WARNING_KEY = "security_warning"
+_SECURITY_WARNING = (
+    "A configured credential value was detected in the command and has been "
+    "redacted from logs. Never inline secrets in commands — use key-based auth, "
+    "an askpass helper, or passwordless sudo."
+)
+
+
+def _alias_secrets(alias: str) -> set[str]:
+    """Best-effort set of secret values an alias could expose.
+
+    Prefers the live session's config; falls back to loading the on-disk config
+    so the no-open-session error path still redacts. Never raises.
+    """
+    session = session_registry.get_any(alias)
+    if session is not None:
+        return secret_values(session.config)
+    try:
+        from lablink.config import load_config
+
+        return secret_values(load_config(alias))
+    except Exception:
+        return set()
 
 
 def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -220,6 +245,18 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
         transport = client.get_transport()
         identity = transport.remote_version if transport else f"SSH {config.host}"
 
+        # Surface the resolved peer address (ground truth from the socket) so
+        # downstream config — e.g. a REST base_url for a service on this same
+        # host — can use the real IP instead of a guessed one. Never let a
+        # metadata extra break connect.
+        metadata: dict = {}
+        try:
+            peer = transport.getpeername() if transport else None
+            if peer:
+                metadata["peer_address"] = f"{peer[0]}:{peer[1]}"
+        except Exception:
+            pass
+
         session = Session(
             alias=config.alias,
             interface_type="ssh",
@@ -233,6 +270,7 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
             alias=config.alias,
             interface_type="ssh",
             identity=identity,
+            metadata=metadata,
         )
 
     def disconnect(self, session: Session[SshDriverConfig]) -> Result:
@@ -313,10 +351,17 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
     def ssh_exec_impl(
         self, alias: str, command: str, timeout_ms: Optional[int] = None
     ) -> dict:
+        # The command is logged verbatim except for configured credentials, which
+        # log_event scrubs given `secrets`; warn the agent if one was inlined.
+        secrets = _alias_secrets(alias)
+        secret_found = contains_secret(command, secrets)
+
         lookup = session_registry.lookup(alias, expected_type="ssh")
         if not lookup.found:
             result = self._no_session_result(alias, lookup)
-            log_event(op="ssh_exec", alias=alias, command=command, success=False, error=result.error)
+            if secret_found:
+                result.metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
+            log_event(op="ssh_exec", alias=alias, command=command, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
         session = lookup.session
@@ -333,25 +378,38 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                 error=f"SSH exec error: {exc}",
                 hint="Check that the command is valid and the session is still open. Increase timeout_ms for long-running commands.",
             )
-            log_event(op="ssh_exec", alias=alias, command=command, success=False, error=result.error)
+            if secret_found:
+                result.metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
+            log_event(op="ssh_exec", alias=alias, command=command, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
+        metadata = {"exit_code": exit_code, "stderr": err_text}
+        if secret_found:
+            metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
         result = ReadResult(
             success=True,
             raw=out,
             format="text",
-            metadata={"exit_code": exit_code, "stderr": err_text},
+            metadata=metadata,
         )
-        log_event(op="ssh_exec", alias=alias, command=command, exit_code=exit_code, success=True)
+        log_event(op="ssh_exec", alias=alias, command=command, exit_code=exit_code, success=True, secrets=secrets)
         return asdict(result)
 
     def ssh_shell_session_impl(
         self, alias: str, commands: list[str], timeout_ms: Optional[int] = None
     ) -> dict:
+        # Resolve secrets before the lookup so the no-session path can still warn
+        # the agent that it inlined a credential. This tool logs cmd_count, not
+        # command text, but errors and the warning still depend on detection.
+        secrets = _alias_secrets(alias)
+        secret_found = contains_secret("\n".join(commands), secrets)
+
         lookup = session_registry.lookup(alias, expected_type="ssh")
         if not lookup.found:
             result = self._no_session_result(alias, lookup)
-            log_event(op="ssh_shell_session", alias=alias, success=False, error=result.error)
+            if secret_found:
+                result.metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
+            log_event(op="ssh_shell_session", alias=alias, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
         session = lookup.session
@@ -378,18 +436,26 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                 error=f"SSH shell error: {exc}",
                 hint="Check that the session is still open and the host allows interactive shells.",
             )
-            log_event(op="ssh_shell_session", alias=alias, success=False, error=result.error)
+            if secret_found:
+                result.metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
+            log_event(op="ssh_shell_session", alias=alias, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
-        result = ReadResult(success=True, raw=transcript, format="text")
-        log_event(op="ssh_shell_session", alias=alias, cmd_count=len(commands), success=True)
+        meta = {_SECURITY_WARNING_KEY: _SECURITY_WARNING} if secret_found else {}
+        result = ReadResult(success=True, raw=transcript, format="text", metadata=meta)
+        log_event(op="ssh_shell_session", alias=alias, cmd_count=len(commands), success=True, secrets=secrets)
         return asdict(result)
 
     def ssh_start_stream_impl(self, alias: str, command: str) -> dict:
+        secrets = _alias_secrets(alias)
+        secret_found = contains_secret(command, secrets)
+
         lookup = session_registry.lookup(alias, expected_type="ssh")
         if not lookup.found:
             result = self._no_session_result(alias, lookup)
-            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            if secret_found:
+                result.metadata[_SECURITY_WARNING_KEY] = _SECURITY_WARNING
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
         session = lookup.session
@@ -400,7 +466,7 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                 error=f"A stream is already active for '{alias}'.",
                 hint="Call ssh_stop_stream(alias) to terminate it before starting a new one.",
             )
-            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
         try:
@@ -412,7 +478,7 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                 error=f"Failed to start stream: {exc}",
                 hint="Check that the session is still open and the command is valid.",
             )
-            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error)
+            log_event(op="ssh_start_stream", alias=alias, command=command, success=False, error=result.error, secrets=secrets)
             return asdict(result)
 
         buf: Queue = Queue(maxsize=1000)
@@ -429,8 +495,9 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
         session.buffer_thread = thread
         thread.start()
 
-        log_event(op="ssh_start_stream", alias=alias, command=command, success=True)
-        return asdict(Result(success=True))
+        meta = {_SECURITY_WARNING_KEY: _SECURITY_WARNING} if secret_found else {}
+        log_event(op="ssh_start_stream", alias=alias, command=command, success=True, secrets=secrets)
+        return asdict(Result(success=True, metadata=meta))
 
     def ssh_read_stream_impl(self, alias: str, timeout_ms: Optional[int] = None) -> dict:
         lookup = session_registry.lookup(alias, expected_type="ssh")
@@ -576,6 +643,19 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
             commands with defined exit behavior. The session must already be
             open via connect(alias).
 
+            Security: the command string is written to the event log and lands
+            in the remote's shell history and process list. NEVER inline a
+            credential (no `echo $PASS | sudo -S ...`); for privileged work use
+            key-based auth, an askpass helper, or passwordless sudo. Configured
+            credential values are scrubbed from the log and trigger a
+            metadata.security_warning, but that scrubbing is best-effort — do
+            not rely on it for secrets LabLink does not know about.
+
+            Do not guess a remote's network identity. When you need its IP or
+            hostname for downstream config, read connect()'s
+            metadata.peer_address (the resolved socket peer) or query the host
+            (e.g. `hostname -I`) — never invent an address.
+
             Args:
                 alias: Configured device alias (must be an SSH-type alias).
                 command: Shell command to execute, e.g. "uname -a" or "ls /data".
@@ -588,6 +668,8 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
                 metadata: {"exit_code": int, "stderr": str}. exit_code is
                     load-bearing — a non-zero value means the command failed
                     even when success is True. Check it explicitly for scripts.
+                    May also carry "security_warning" if a credential was
+                    detected in the command.
                 success: False only on transport errors. A command returning
                     exit_code=1 still yields success=True with the non-zero
                     exit code in metadata.
@@ -607,6 +689,9 @@ class SshDriver(LabLinkDriver[SshDriverConfig]):
             by prior commands, directory context). Prefer ssh_exec for
             independent one-shot commands — it is faster and gives a clean
             exit code.
+
+            Security: same rule as ssh_exec — never inline credentials in any
+            command. A detected credential sets metadata.security_warning.
 
             Args:
                 alias: Configured device alias (must be an SSH-type alias).

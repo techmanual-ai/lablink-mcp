@@ -1,0 +1,31 @@
+# Example Home Assistant config (uses the REST driver).
+# Copy to ~/.lablink/devices/home_assistant.toml and edit as needed.
+#
+# Home Assistant is a local-first smart-home hub. It exposes a REST API, so the
+# existing `rest` driver drives it directly — one alias reaches every device HA
+# integrates (lights, locks, thermostats, sensors, vacuums, media players, ...).
+
+type        = "rest"
+alias       = "home_assistant"
+description = "Home Assistant hub"
+timeout_ms  = 10000
+
+# Point at your HA instance's API root. Common forms:
+#   http://homeassistant.local:8123/api   (mDNS hostname)
+#   http://192.168.1.50:8123/api          (fixed IP)
+base_url    = "http://homeassistant.local:8123/api"
+
+# Set false only if HA is on https with a self-signed certificate.
+verify_ssl  = true
+
+# Auth: a Home Assistant Long-Lived Access Token, sent as a bearer token.
+# Create one in HA under: Profile -> Security -> Long-Lived Access Tokens.
+# Store the value in the environment, never here:  export HASS_TOKEN=<token>
+auth_type      = "bearer"
+auth_token_env = "HASS_TOKEN"
+
+# Useful endpoints once connected (paths are appended to base_url):
+#   rest_get  home_assistant /                       -> API liveness check
+#   rest_get  home_assistant /states                 -> every entity's state
+#   rest_get  home_assistant /states/light.kitchen   -> one entity's state
+#   rest_post home_assistant /services/light/turn_on --body '{"entity_id": "light.kitchen"}'

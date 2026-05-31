@@ -3,6 +3,7 @@
 All filesystem access is redirected to tmp_path; no real config dirs touched.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -10,7 +11,10 @@ import pytest
 import lablink.config as cfg_module
 from lablink.config import load_config, load_device_memory
 from lablink.exceptions import ConfigError
+from lablink.interfaces.rest import RestDriverConfig
 from lablink.interfaces.visa import VisaDriverConfig
+
+_EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples" / "configs"
 
 
 def _write(tmp_path, name: str, content: bytes):
@@ -103,6 +107,25 @@ class TestLoadConfig:
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             config = load_config("scope")
         assert config.alias == "scope"
+
+
+# ---------------------------------------------------------------------------
+# shipped example configs
+# ---------------------------------------------------------------------------
+
+
+class TestExampleConfigs:
+    def test_home_assistant_example_loads(self):
+        # The Home Assistant example must parse as a bearer-authed REST config,
+        # so the shipped template can't silently rot out of sync with the loader.
+        with patch.object(cfg_module, "get_config_dir", return_value=_EXAMPLES_DIR):
+            config = load_config("rest_home_assistant")
+        assert isinstance(config, RestDriverConfig)
+        assert config.type == "rest"
+        assert config.alias == "home_assistant"
+        assert config.base_url.endswith("/api")
+        assert config.auth_type == "bearer"
+        assert config.auth_token_env == "HASS_TOKEN"
 
 
 # ---------------------------------------------------------------------------

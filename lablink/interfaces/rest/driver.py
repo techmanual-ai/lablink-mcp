@@ -30,6 +30,7 @@ from lablink.base import (
 )
 from lablink.event_logger import log_event
 from lablink.interfaces.rest.config import RestDriverConfig
+from lablink.redaction import secret_values
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,27 @@ from lablink.interfaces.rest.config import RestDriverConfig
 
 def _build_url(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + "/" + path.lstrip("/")
+
+
+def _log_rest(
+    op: str,
+    alias: str,
+    path: str,
+    secrets: set[str],
+    *,
+    success: bool,
+    status_code: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Log a REST op with configured credentials scrubbed from the durable log.
+
+    A token can ride in a query string (``path``) or be echoed back inside an
+    error message (which embeds the full URL). Both are free-form fields; passing
+    ``secrets`` to ``log_event`` scrubs them at the write boundary. The
+    ReadResult returned to the agent is untouched.
+    """
+    extra = {"status_code": status_code} if status_code is not None else {}
+    log_event(op=op, alias=alias, path=path, success=success, error=error, secrets=secrets, **extra)
 
 
 def _resolve_auth(config: RestDriverConfig) -> tuple[Any, dict[str, str]]:
@@ -302,6 +324,7 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
         if err:
             return err
 
+        secrets = secret_values(session.config)
         url = _build_url(session.config.base_url, path)
         effective_timeout = (timeout_ms or session.config.timeout_ms) / 1000
         try:
@@ -312,11 +335,11 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
                 error=f"GET {url} failed: {exc}",
                 hint="Check network connectivity and that the API server is running.",
             )
-            log_event(op="rest_get", alias=alias, path=path, success=False, error=result.error)
+            _log_rest("rest_get", alias, path, secrets, success=False, error=result.error)
             return asdict(result)
 
         result = _response_to_result(response)
-        log_event(op="rest_get", alias=alias, path=path, status_code=response.status_code, success=True)
+        _log_rest("rest_get", alias, path, secrets, success=True, status_code=response.status_code)
         return asdict(result)
 
     def rest_post_impl(
@@ -331,6 +354,7 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
         if err:
             return err
 
+        secrets = secret_values(session.config)
         url = _build_url(session.config.base_url, path)
         effective_timeout = (timeout_ms or session.config.timeout_ms) / 1000
         try:
@@ -343,11 +367,11 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
                 error=f"POST {url} failed: {exc}",
                 hint="Check network connectivity and request body format.",
             )
-            log_event(op="rest_post", alias=alias, path=path, success=False, error=result.error)
+            _log_rest("rest_post", alias, path, secrets, success=False, error=result.error)
             return asdict(result)
 
         result = _response_to_result(response)
-        log_event(op="rest_post", alias=alias, path=path, status_code=response.status_code, success=True)
+        _log_rest("rest_post", alias, path, secrets, success=True, status_code=response.status_code)
         return asdict(result)
 
     def rest_put_impl(
@@ -362,6 +386,7 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
         if err:
             return err
 
+        secrets = secret_values(session.config)
         url = _build_url(session.config.base_url, path)
         effective_timeout = (timeout_ms or session.config.timeout_ms) / 1000
         try:
@@ -374,11 +399,11 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
                 error=f"PUT {url} failed: {exc}",
                 hint="Check network connectivity and request body format.",
             )
-            log_event(op="rest_put", alias=alias, path=path, success=False, error=result.error)
+            _log_rest("rest_put", alias, path, secrets, success=False, error=result.error)
             return asdict(result)
 
         result = _response_to_result(response)
-        log_event(op="rest_put", alias=alias, path=path, status_code=response.status_code, success=True)
+        _log_rest("rest_put", alias, path, secrets, success=True, status_code=response.status_code)
         return asdict(result)
 
     def rest_patch_impl(
@@ -393,6 +418,7 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
         if err:
             return err
 
+        secrets = secret_values(session.config)
         url = _build_url(session.config.base_url, path)
         effective_timeout = (timeout_ms or session.config.timeout_ms) / 1000
         try:
@@ -405,11 +431,11 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
                 error=f"PATCH {url} failed: {exc}",
                 hint="Check network connectivity and request body format.",
             )
-            log_event(op="rest_patch", alias=alias, path=path, success=False, error=result.error)
+            _log_rest("rest_patch", alias, path, secrets, success=False, error=result.error)
             return asdict(result)
 
         result = _response_to_result(response)
-        log_event(op="rest_patch", alias=alias, path=path, status_code=response.status_code, success=True)
+        _log_rest("rest_patch", alias, path, secrets, success=True, status_code=response.status_code)
         return asdict(result)
 
     def rest_delete_impl(
@@ -423,6 +449,7 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
         if err:
             return err
 
+        secrets = secret_values(session.config)
         url = _build_url(session.config.base_url, path)
         effective_timeout = (timeout_ms or session.config.timeout_ms) / 1000
         try:
@@ -435,11 +462,11 @@ class RestDriver(LabLinkDriver[RestDriverConfig]):
                 error=f"DELETE {url} failed: {exc}",
                 hint="Check network connectivity and that the resource exists.",
             )
-            log_event(op="rest_delete", alias=alias, path=path, success=False, error=result.error)
+            _log_rest("rest_delete", alias, path, secrets, success=False, error=result.error)
             return asdict(result)
 
         result = _response_to_result(response)
-        log_event(op="rest_delete", alias=alias, path=path, status_code=response.status_code, success=True)
+        _log_rest("rest_delete", alias, path, secrets, success=True, status_code=response.status_code)
         return asdict(result)
 
     # --- registration ---

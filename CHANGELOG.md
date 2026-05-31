@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Home Assistant support** via the existing `rest` driver — drive a whole
+  smart home (lights, locks, thermostats, sensors, media) through one alias with
+  a Home Assistant Long-Lived Access Token. Ships an example config
+  (`examples/configs/rest_home_assistant.toml`) and a README walkthrough; no new
+  driver required.
+
+### Security
+
+- **Credential redaction in the event log.** Configured credentials (the values
+  behind a config's `auth_*_env` variables) are now scrubbed to `***` from
+  free-form event-log fields — an SSH `command`, a REST query `path`, or an
+  `error` that echoes either — so a secret the agent inlines by mistake never
+  lands in the durable `~/.lablink/logs` JSONL. Scrubbing is applied at the
+  logging boundary, and the SSH tools attach a `metadata.security_warning` when
+  a known credential is detected inline. The result returned to the agent is
+  unchanged. Catches only secrets LabLink knows about, matched as their literal
+  value (very short values are excluded to avoid mangling logs); the tool
+  docstrings remain the front-line rule against inlining secrets at all.
+
 ## [0.1.0] - 2026-05-30
 
 First release of LabLink: five protocol drivers on a shared multi-driver
