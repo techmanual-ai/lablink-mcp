@@ -1,0 +1,102 @@
+# ~/.lablink/topology.toml
+#
+# System topology for the RF validation bench.
+# Describes the physical wiring: which ports are connected, what signals flow
+# across each connection, and what safety constraints apply.
+#
+# IMPORTANT: Constraints are ADVISORY ONLY. LabLink surfaces severity/limit/note
+# to the agent; it does not and cannot enforce them (it does not parse protocol
+# syntax). The agent is responsible for honoring critical constraints before
+# issuing commands.
+#
+# Override the default path:
+#   export LABLINK_TOPOLOGY_FILE=/path/to/your/topology.toml
+
+name = "rf_validation_bench"
+
+# ---------------------------------------------------------------------------
+# Nodes — every device or passive element in the system.
+#
+# Managed devices (a <alias>.toml exists): set `alias`.
+# Passive / unmanaged gear (attenuators, splitters, DUTs with no config): set `id`.
+# A node needs at least one of `alias` or `id`.
+# ---------------------------------------------------------------------------
+
+[[node]]
+alias = "siglent_sdg6022"
+role  = "signal generator"
+
+[[node]]
+alias = "tek_mso44"
+role  = "oscilloscope"
+
+[[node]]
+alias = "dut_serial"
+role  = "DUT"
+
+[[node]]
+alias = "keysight_e36313"
+role  = "power supply"
+
+[[node]]
+# Passive, unmanaged gear: no alias, addressed by `id` in links/nets.
+id    = "pad_10db"
+role  = "10 dB attenuator"
+
+# ---------------------------------------------------------------------------
+# Links — directed, two-endpoint connections.
+#
+# Ports are written as `<handle>:<PORT>` where <handle> is a node's alias or id.
+# `params` is a free-form key/value bag; use it for any connection-level metadata.
+# `[[link.constraint]]` attaches advisory safety limits to this link.
+# ---------------------------------------------------------------------------
+
+# Stimulus path: siggen -> 10 dB pad -> DUT (two segments, passive element in between)
+[[link]]
+from   = "siglent_sdg6022:OUTPUT1"
+to     = "pad_10db:IN"
+signal = "stimulus waveform"
+params = { impedance_ohm = 50, coupling = "AC" }
+
+[[link]]
+from   = "pad_10db:OUT"
+to     = "dut_serial:WFM_IN_B"
+signal = "stimulus waveform (attenuated)"
+params = { impedance_ohm = 50 }
+
+# DUT response captured on scope channel 2
+[[link]]
+from   = "dut_serial:SIG_OUT_A"
+to     = "tek_mso44:CH2"
+signal = "DUT response"
+params = { probe = "10x" }
+
+# Power link: supply CH1 -> DUT 12 V input, with a critical voltage limit.
+[[link]]
+from   = "keysight_e36313:CH1"
+to     = "dut_serial:12V_IN"
+signal = "DC power"
+params = { nominal_v = 12.0 }
+
+  [[link.constraint]]
+  severity = "critical"
+  limit    = "voltage <= 13.5"
+  note     = "DUT is damaged above 13.5 V on 12V_IN."
+
+# ---------------------------------------------------------------------------
+# Nets — n-ary shared buses (more than two devices on the same signal).
+#
+# Use `net` when a signal fans out to multiple endpoints simultaneously.
+# Each endpoint has a `port` and an optional `role`.
+# ---------------------------------------------------------------------------
+
+# 10 MHz reference clock: siggen is master, scope and DUT are slaves.
+[[net]]
+name      = "ref_10mhz"
+signal    = "10 MHz reference clock"
+params    = { frequency_hz = 10_000_000 }
+endpoints = [
+  { port = "siglent_sdg6022:REF_OUT", role = "master" },
+  { port = "tek_mso44:REF_IN",        role = "slave"  },
+  { port = "dut_serial:10MHZ_REF",    role = "slave"  },
+]

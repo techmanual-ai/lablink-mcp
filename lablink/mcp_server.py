@@ -4,8 +4,9 @@ Installed as the 'lablink-mcp' console script via pip install.
 Configure in your MCP client as: {"command": "lablink-mcp"}
 
 Architecture (docs/ARCHITECTURE.md §2, §6.1):
-  - Shared lifecycle tools (connect, disconnect, list_devices, diagnose) are
-    defined here and dispatch to the owning driver via DRIVER_REGISTRY.
+  - Shared lifecycle tools (connect, disconnect, list_devices, diagnose,
+    system_topology) are defined here; the per-device ones dispatch to the
+    owning driver via DRIVER_REGISTRY.
   - Per-driver operation tools (visa_query, ...) self-register via each
     driver's register_tools(mcp), only when that driver's deps are installed.
 
@@ -24,12 +25,16 @@ from lablink import session as session_registry
 from lablink.base import DiagnosticResult, Result
 from lablink.config import (
     get_config_dir,
+    get_topology_file,
+    list_configured_aliases,
     load_config,
     load_device_memory,
+    load_system,
 )
 from lablink.exceptions import ConfigError
 from lablink.interfaces import DRIVER_REGISTRY
 from lablink.event_logger import log_event
+from lablink.system import device_slice, validate_system
 
 _INSTRUCTIONS_TEMPLATE = """
 You are operating LabLink, a local-first MCP server that gives you direct,
@@ -45,7 +50,9 @@ Each device is addressed by an *alias* whose config `type` field selects the
 driver. Two tool layers:
 
 - Shared lifecycle tools (always present): connect, disconnect, list_devices,
-  diagnose. The driver is resolved from the alias's config.
+  diagnose, system_topology. The driver is resolved from the alias's config.
+  system_topology returns the lab's physical wiring map (or one device's slice);
+  its constraints are advisory context, not enforced.
 - Per-driver operation tools (present only when that driver's deps are
   installed) — e.g. visa_query, visa_write. **Each operation tool's docstring
   is the source of truth for that protocol's semantics; read it rather than
@@ -185,13 +192,26 @@ def do_connect(alias: str) -> dict:
     if not result.success:
         return asdict(result)
 
-    # Inject device_memory at the shared layer via replace() so __post_init__
-    # re-runs and mirrors device_memory -> instrument_memory (§6.3.1).
-    # The .md file takes precedence; fall back to whatever the driver provided
-    # (e.g. ExternalDriver surfaces tool_instructions this way).
+    # Inject device_memory and topology_context in a single replace() so
+    # __post_init__ re-runs exactly once (§6.3.1 / §8.3).
     file_memory = load_device_memory(alias)
+
+    # Only inject topology_context when the device actually appears in the
+    # wiring — an empty slice (no links, no nets) means "not wired in" → None.
+    topo_context = None
+    try:
+        topo = load_system()
+        if topo is not None:
+            slice_ = device_slice(topo, alias)
+            if slice_.links or slice_.nets:
+                topo_context = slice_
+    except ConfigError:
+        pass  # malformed topology must not break a healthy connect (§4.2)
+
     final = dataclasses.replace(
-        result, device_memory=file_memory if file_memory is not None else result.device_memory
+        result,
+        device_memory=file_memory if file_memory is not None else result.device_memory,
+        topology_context=topo_context,
     )
     return asdict(final)
 
@@ -213,12 +233,8 @@ def do_disconnect(alias: str) -> dict:
 
 
 def do_list_devices() -> list:
-    config_dir = get_config_dir()
     devices: list[dict] = []
-    if not config_dir.exists():
-        return devices
-    for toml_file in sorted(config_dir.glob("*.toml")):
-        alias = toml_file.stem
+    for alias in list_configured_aliases():
         try:
             cfg = load_config(alias)
         except ConfigError as exc:
@@ -283,8 +299,25 @@ def _system_audit() -> dict:
                 entry["status"] = "ready"
         drivers[type_name] = entry
 
+    # Topology validation — soft warnings only; never affects ready (§4.2).
+    topology_warnings: list[str] = []
+    known_aliases = list_configured_aliases()
+    try:
+        topo = load_system()
+        if topo is not None:
+            topology_warnings.extend(validate_system(topo, known_aliases))
+    except ConfigError as exc:
+        topology_warnings.append(f"topology.toml parse error: {exc}")
+
     log_event(op="diagnose", alias=None, success=ready)
-    return asdict(DiagnosticResult(ready=ready, drivers=drivers, action_items=action_items))
+    return asdict(
+        DiagnosticResult(
+            ready=ready,
+            drivers=drivers,
+            action_items=action_items,
+            topology_warnings=topology_warnings,
+        )
+    )
 
 
 def do_diagnose(alias: Optional[str] = None) -> dict:
@@ -320,11 +353,56 @@ def do_diagnose(alias: Optional[str] = None) -> dict:
     driver = get_driver(config.type)
     result = driver.diagnose(config)
     file_memory = load_device_memory(alias)
+
+    topo_context = None
+    try:
+        topo = load_system()
+        if topo is not None:
+            slice_ = device_slice(topo, alias)
+            if slice_.links or slice_.nets:
+                topo_context = slice_
+    except ConfigError:
+        pass  # malformed topology must not break diagnose (§4.2)
+
     final = dataclasses.replace(
-        result, device_memory=file_memory if file_memory is not None else result.device_memory
+        result,
+        device_memory=file_memory if file_memory is not None else result.device_memory,
+        topology_context=topo_context,
     )
     log_event(op="diagnose", alias=alias, success=final.ready)
     return asdict(final)
+
+
+def do_system_topology(alias: Optional[str] = None) -> dict:
+    try:
+        topo = load_system()
+    except ConfigError as exc:
+        log_event(op="system_topology", alias=alias, success=False, error=str(exc))
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Run `lablink topology validate` to locate the problem.",
+        }
+
+    if topo is None:
+        topo_path = get_topology_file()
+        log_event(op="system_topology", alias=alias, success=True)
+        result: dict = {
+            "success": True,
+            "topology": None,
+            "metadata": {"note": f"No topology.toml configured. Expected: {topo_path}"},
+        }
+        if alias is not None:
+            result["topology_context"] = None
+        return result
+
+    if alias is None:
+        log_event(op="system_topology", alias=None, success=True)
+        return {"success": True, "topology": asdict(topo)}
+
+    slice_ = device_slice(topo, alias)
+    log_event(op="system_topology", alias=alias, success=True)
+    return {"success": True, "topology_context": asdict(slice_)}
 
 
 # ---------------------------------------------------------------------------
@@ -377,15 +455,41 @@ def diagnose(alias: str | None = None) -> dict:
 
     With an alias: dispatches to the device's driver for backend health,
     resource visibility, and interface-specific reachability; includes
-    device_memory when a valid config is found.
+    device_memory and topology_context (this device's wiring slice) when
+    a valid config and topology are found.
 
     Without an alias: a system audit — which driver extras are installed, their
-    system-level deps, and a prioritized action_items list of what to install.
+    system-level deps, a prioritized action_items list of what to install, and
+    topology_warnings (soft wiring advisories that never affect the ready flag).
 
     Args:
         alias: Optional device alias for targeted checks.
     """
     return do_diagnose(alias)
+
+
+@mcp.tool()
+def system_topology(alias: str | None = None) -> dict:
+    """Return the system topology — the physical wiring of the lab bench.
+
+    IMPORTANT: Constraints in the topology are ADVISORY ONLY. LabLink surfaces
+    severity/limit/note to help you make decisions; it does not and cannot
+    enforce them (it does not parse protocol syntax). You are responsible for
+    honoring any constraint marked 'critical' before issuing commands.
+
+    Without an alias: returns the full topology (all nodes, links, nets).
+    With an alias: returns only that device's wiring slice (its links, nets,
+    neighbors, and constraints).
+
+    Returns success=True with topology=None when no topology.toml is configured
+    (absence is not an error — not every bench needs one). Returns success=False
+    when topology.toml exists but cannot be parsed; run `lablink topology
+    validate` to locate the problem.
+
+    Args:
+        alias: Optional device alias to filter for a single device's slice.
+    """
+    return do_system_topology(alias)
 
 
 # ---------------------------------------------------------------------------

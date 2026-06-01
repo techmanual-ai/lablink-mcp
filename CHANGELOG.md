@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`system_topology` tool** — a new shared lifecycle tool (alongside `connect`,
+  `disconnect`, `list_devices`, `diagnose`) that surfaces a machine-readable map
+  of the lab bench wiring. Defined in `~/.lablink/topology.toml`
+  (override: `LABLINK_TOPOLOGY_FILE`). Without an alias returns the full topology
+  (nodes, links, nets); with an alias returns that device's wiring slice
+  (connected links, nets, neighbors, and safety constraints). The `connect()` and
+  `diagnose(alias)` tools now inject a `topology_context` field automatically so
+  the agent sees wiring and safety limits the moment it connects. The no-alias
+  `diagnose()` audit now includes a `topology_warnings` field for soft wiring
+  advisories (unresolved ports, unconfigured aliases, unknown severities,
+  alias/id collisions); these never affect the `ready` flag. Constraints are
+  **advisory only** — LabLink surfaces `severity` / `limit` / `note` to the
+  agent; it does not enforce them. A `lablink topology` CLI subgroup is also
+  added with `show [alias]` and `validate` subcommands.
+
 - **Home Assistant support** via the existing `rest` driver — drive a whole
   smart home (lights, locks, thermostats, sensors, media) through one alias with
   a Home Assistant Long-Lived Access Token. Ships an example config

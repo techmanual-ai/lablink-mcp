@@ -78,7 +78,8 @@ lablink-mcp/
 │   ├── mcp_server.py               # FastMCP entrypoint; shared tools + driver.register_tools()
 │   ├── cli.py                      # Click root; driver.register_cli_commands()
 │   ├── base.py                     # data models, config dataclasses, Session, the driver ABC
-│   ├── config.py                   # TOML loader via DRIVER_CONFIG_REGISTRY; device-memory reader
+│   ├── config.py                   # TOML loader via DRIVER_CONFIG_REGISTRY; device-memory reader; load_system()
+│   ├── system.py                   # topology graph logic: device_slice(), validate_system()
 │   ├── session.py                  # _sessions registry; three-state lookup
 │   ├── event_logger.py             # JSONL event log
 │   ├── exceptions.py               # ConfigError, SessionError, DriverError
@@ -92,7 +93,10 @@ lablink-mcp/
 │       ├── python_shell/           # + bootstrap.py (subprocess REPL)
 │       └── external/               # routing stub for vendor-supplied MCP servers
 ├── tests/
-├── examples/configs/               # one example .toml per driver
+│   └── test_system.py              # topology subsystem tests
+├── examples/
+│   ├── configs/                    # one example .toml per driver
+│   └── topology.toml               # RF-bench topology example
 └── pyproject.toml
 ```
 
@@ -544,6 +548,50 @@ No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `LABLINK_CONFIG_DIR` | `~/.lablink/devices/` | Device config directory |
+| `LABLINK_TOPOLOGY_FILE` | `~/.lablink/topology.toml` | System topology file; resolved independently of `LABLINK_CONFIG_DIR` |
 | `LABLINK_VISA_BACKEND` | `@py` | PyVISA backend (`@py` or `@ni`) |
 | `LABLINK_LOG_DIR` | `~/.lablink/logs/` | Event log directory; `""` disables logging |
 | `TMAI_API_KEY` | — | techmanual.ai API key for agent-directed manual lookups (optional) |
+
+---
+
+## 15. System Topology
+
+`system_topology` is a **shared system-level tool** (alongside the lifecycle four) that surfaces a machine-readable map of how the lab bench is physically wired — which ports connect to which, what signals flow, and what safety constraints apply.
+
+### 15.1 Module placement
+
+The subsystem is split across three existing module homes to match LabLink conventions:
+
+- **Data models → `lablink/base.py`** — `Constraint`, `SystemNode`, `Link`, `NetEndpoint`, `Net`, `SystemTopology`, `DeviceConnections`. `ConnectResult` and `DiagnosticResult` each carry a `topology_context: DeviceConnections | None` field. `DiagnosticResult` also carries `topology_warnings: list[str]`.
+- **TOML loading → `lablink/config.py`** — `load_system() -> SystemTopology | None` (the single reader of `topology.toml`; `None` when absent; raises `ConfigError` on malformed input) and `list_configured_aliases() -> list[str]` (the single home for the config-dir glob).
+- **Graph logic → `lablink/system.py`** (new) — `device_slice(topology, alias)` and `validate_system(topology, known_aliases)`.
+
+### 15.2 Data models
+
+- `Constraint(severity, limit, note)` — `severity` is a plain `str` (not `Enum`) so it survives `asdict()` and preserves unrecognized values verbatim.
+- `SystemNode(alias?, id?, role?)` — at least one of `alias` / `id` required.
+- `Link(from_port, to_port, signal?, params, constraints)` — directed 2-endpoint connection.
+- `Net(name, signal?, params, endpoints, constraints)` — n-ary shared bus.
+- `DeviceConnections(alias, links, nets, neighbors, constraints)` — one device's topology slice; what the agent receives on `connect()` and `diagnose(alias)`.
+
+### 15.3 Injection contract (extending §8.3)
+
+`connect()` and `diagnose(alias)` inject `topology_context` the same way device memory is injected — via a single `dataclasses.replace()` call. Both guard the load with `try/except ConfigError`: a malformed `topology.toml` must not break a healthy device connection or diagnosis. A device with no matching wiring receives `topology_context=None` (not an empty slice).
+
+### 15.4 Error isolation
+
+`load_system()` raises `ConfigError` on malformed input. Hot-path callers each catch it:
+- `connect()` / `diagnose(alias)` — catch, inject nothing, return device result unchanged.
+- `_system_audit()` — catch, record the error in `topology_warnings` (never in `action_items`); `ready` is unaffected. Topology warnings are always separate from driver-dependency `action_items` so a wiring advisory is never mistaken for a required install step.
+
+The `system_topology` tool is the one caller that surfaces parse errors directly to the agent (its job is to expose topology problems, not hide them).
+
+### 15.5 `validate_system()` checks
+
+1. **Unresolved port prefix** — a `link`/`net` endpoint whose prefix matches no node.
+2. **Declared-but-unconfigured device** — a node `alias` with no `<alias>.toml`.
+3. **Unknown `severity`** — a constraint whose value is outside `{info, warning, critical}`.
+4. **alias/id collision** — a passive `id` that equals a managed node's `alias` (would be silently shadowed by alias-first port resolution).
+
+All are soft warnings; `validate_system` never raises.

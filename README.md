@@ -160,10 +160,11 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 
 | Tool | Description |
 |------|-------------|
-| `connect(alias)` | Open session, return identity and device memory |
+| `connect(alias)` | Open session, return identity, device memory, and topology slice |
 | `disconnect(alias)` | Close session |
 | `list_devices()` | List all configured aliases with status |
-| `diagnose(alias?)` | Reachability and dependency check; system audit when no alias given |
+| `diagnose(alias?)` | Reachability and dependency check; system audit (with topology warnings) when no alias given |
+| `system_topology(alias?)` | Return the bench wiring map; or a single device's slice |
 
 ### Per-driver operation tools
 
@@ -361,11 +362,73 @@ All tests mock hardware drivers — no real instruments required.
 
 ---
 
+## Mapping your system (optional)
+
+Create `~/.lablink/topology.toml` to give the agent a machine-readable map of how your bench is physically wired — which ports connect to which, what signals flow, and what safety limits apply.
+
+```toml
+# ~/.lablink/topology.toml
+name = "rf_bench"
+
+[[node]]
+alias = "siglent_sdg6022"
+role  = "signal generator"
+[[node]]
+alias = "tek_mso44"
+role  = "oscilloscope"
+[[node]]
+id    = "pad_10db"          # passive gear: no alias needed
+role  = "10 dB attenuator"
+
+[[link]]
+from   = "siglent_sdg6022:OUTPUT1"
+to     = "pad_10db:IN"
+signal = "stimulus"
+params = { impedance_ohm = 50 }
+
+[[link]]
+from   = "pad_10db:OUT"
+to     = "tek_mso44:CH1"
+signal = "stimulus (attenuated)"
+
+[[link]]
+from   = "keysight_e36313:CH1"
+to     = "dut_serial:12V_IN"
+signal = "DC power"
+  [[link.constraint]]
+  severity = "critical"
+  limit    = "voltage <= 13.5"
+  note     = "DUT is damaged above 13.5 V on 12V_IN."
+```
+
+Call `system_topology()` to retrieve the full map, or `system_topology(alias)` to get one device's wiring slice. `connect()` and `diagnose(alias)` also inject the slice automatically as `topology_context`.
+
+**Constraints are advisory only.** LabLink surfaces `severity` / `limit` / `note` to the agent; it does not and cannot enforce them (it does not parse protocol syntax). The agent is responsible for honoring limits.
+
+Validate the file with:
+
+```bash
+lablink topology validate
+lablink topology show               # full map
+lablink topology show tek_mso44     # one device's slice
+```
+
+See [examples/topology.toml](examples/topology.toml) for a full annotated example.
+
+Override the default path:
+
+```bash
+export LABLINK_TOPOLOGY_FILE=/path/to/topology.toml
+```
+
+---
+
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `LABLINK_CONFIG_DIR` | `~/.lablink/devices/` | Device config directory |
+| `LABLINK_TOPOLOGY_FILE` | `~/.lablink/topology.toml` | System topology file (independent of `LABLINK_CONFIG_DIR`) |
 | `LABLINK_VISA_BACKEND` | `@py` | pyvisa backend (`@py` or `@ni`) |
 | `LABLINK_LOG_DIR` | `~/.lablink/logs/` | Event log directory; set to `""` to disable |
 | `TMAI_API_KEY` | — | techmanual.ai API key for agent-directed manual lookups |

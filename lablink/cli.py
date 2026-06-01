@@ -34,6 +34,7 @@ from lablink.mcp_server import (
     do_diagnose,
     do_disconnect,
     do_list_devices,
+    do_system_topology,
     get_driver,
 )
 
@@ -111,6 +112,75 @@ def diagnose_cmd(alias: str | None) -> None:
             click.echo(f"  {i}. {item}", err=True)
 
     click.echo(json.dumps(report, indent=2))
+
+
+# --- Topology subgroup (shared; always registered) -------------------------
+
+
+@cli.group(name="topology")
+def topology_group() -> None:
+    """Inspect the system topology (lab wiring map)."""
+
+
+@topology_group.command(name="show")
+@click.argument("alias", required=False, default=None)
+def topology_show_cmd(alias: str | None) -> None:
+    """Show the full topology, or just ALIAS's wiring slice.
+
+    Prints the structured result as JSON to stdout. If no topology.toml is
+    configured, prints a notice to stderr and exits 0 (absence is not an
+    error). If the file is malformed, prints the error to stderr and exits 1.
+    """
+    from lablink.config import get_topology_file
+
+    result = do_system_topology(alias)
+    if not result["success"]:
+        click.echo(f"Error: {result['error']}", err=True)
+        click.echo(f"Hint: {result.get('hint')}", err=True)
+        sys.exit(1)
+
+    if result.get("topology") is None and result.get("topology_context") is None:
+        topo_path = get_topology_file()
+        click.echo(f"No topology.toml found (expected: {topo_path}).", err=True)
+    else:
+        click.echo(json.dumps(result, indent=2))
+
+
+@topology_group.command(name="validate")
+def topology_validate_cmd() -> None:
+    """Validate topology.toml and report wiring warnings.
+
+    Parses the file, checks for unresolved ports, unconfigured aliases,
+    unknown severity values, and alias/id collisions. Prints warnings to
+    stdout as JSON. If the file is absent, prints a notice and exits 0. If
+    the file is malformed (parse error), prints the error to stderr and exits 1.
+    """
+    from lablink.config import get_topology_file, list_configured_aliases, load_system
+    from lablink.exceptions import ConfigError
+    from lablink.system import validate_system
+
+    topo_path = get_topology_file()
+    try:
+        topo = load_system()
+    except ConfigError as exc:
+        click.echo(f"Parse error in {topo_path}:", err=True)
+        click.echo(f"  {exc}", err=True)
+        sys.exit(1)
+
+    if topo is None:
+        click.echo(f"No topology.toml found (expected: {topo_path}).", err=True)
+        return
+
+    known_aliases = list_configured_aliases()
+    warnings = validate_system(topo, known_aliases)
+    if not warnings:
+        click.echo("Topology is valid. No warnings found.", err=True)
+        click.echo(json.dumps({"warnings": []}))
+    else:
+        click.echo(f"{len(warnings)} warning(s) found:", err=True)
+        for i, w in enumerate(warnings, 1):
+            click.echo(f"  {i}. {w}", err=True)
+        click.echo(json.dumps({"warnings": warnings}))
 
 
 # --- Per-driver subgroups (registered when the driver's deps are present) ---

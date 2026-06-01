@@ -59,6 +59,121 @@ class ReadResult:
     hint: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# System topology types (docs/system_connections_plan.md)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class Constraint:
+    """A safety or operational limit on a link or net.
+
+    ``severity`` is a plain str — not an Enum — so it survives asdict()
+    serialization and preserves unrecognized values verbatim (§4.1 of the plan).
+    Known values: "info", "warning", "critical". Unknown values pass through
+    and trigger a soft warning in validate_system().
+    ``limit`` is a human/agent-readable expression (e.g. "voltage <= 13.5").
+    ``note`` is free text explaining the constraint.
+
+    Constraints are advisory only — LabLink surfaces them to the agent but
+    does not and cannot enforce them (it does not parse protocol syntax).
+    """
+
+    severity: str
+    limit: str
+    note: str = ""
+
+
+@dataclass(kw_only=True)
+class SystemNode:
+    """A device or piece of passive gear in the topology.
+
+    Managed devices: set ``alias`` (must match a <alias>.toml); ``id`` optional.
+    Passive/unmanaged gear (splitters, attenuators, DUTs with no config):
+    set ``id`` (stable handle); no ``alias``.
+    At least one of ``alias`` / ``id`` must be present (enforced by load_system()).
+    Port resolution in links/nets tries ``alias`` first, then ``id``.
+    """
+
+    alias: Optional[str] = None
+    id: Optional[str] = None
+    role: Optional[str] = None
+
+
+@dataclass(kw_only=True)
+class Link:
+    """A directed, two-endpoint signal or power connection.
+
+    ``from_port`` / ``to_port`` are written as ``<handle>:<PORT>`` where
+    ``<handle>`` is a node's ``alias`` or ``id``.
+    ``params`` is an arbitrary key/value bag (impedance, coupling, probe ratio, etc.).
+    ``constraints`` is a list of advisory limits on this connection.
+    """
+
+    from_port: str
+    to_port: str
+    signal: Optional[str] = None
+    params: dict = field(default_factory=dict)
+    constraints: list[Constraint] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class NetEndpoint:
+    """One endpoint in an n-ary shared bus (``Net``)."""
+
+    port: str
+    role: Optional[str] = None
+
+
+@dataclass(kw_only=True)
+class Net:
+    """An n-ary shared bus (e.g. a 10 MHz reference clock shared by N devices).
+
+    Use ``Net`` when more than two devices share the same signal — ``Link``
+    handles the common directed two-endpoint case.
+    ``constraints`` is a list of advisory limits on this bus.
+    """
+
+    name: str
+    signal: Optional[str] = None
+    params: dict = field(default_factory=dict)
+    endpoints: list[NetEndpoint] = field(default_factory=list)
+    constraints: list[Constraint] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class SystemTopology:
+    """The parsed contents of ``~/.lablink/topology.toml``.
+
+    Represents the full bench wiring: every node, every link, and every net.
+    """
+
+    name: Optional[str] = None
+    nodes: list[SystemNode] = field(default_factory=list)
+    links: list[Link] = field(default_factory=list)
+    nets: list[Net] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class DeviceConnections:
+    """A single device's slice of the system topology.
+
+    Injected into ``ConnectResult`` and ``DiagnosticResult`` by the shared
+    connect/diagnose tools so the agent sees wiring and safety limits the
+    moment it connects to a device.
+    ``links`` — all ``Link`` objects that reference this device's alias.
+    ``nets`` — all ``Net`` objects that reference this device's alias.
+    ``neighbors`` — alias-or-id handles of every directly connected device.
+    ``constraints`` — flat list of all constraints from the above links/nets.
+    """
+
+    alias: str
+    links: list[Link] = field(default_factory=list)
+    nets: list[Net] = field(default_factory=list)
+    neighbors: list[str] = field(default_factory=list)
+    constraints: list[Constraint] = field(default_factory=list)
+
+
 @dataclass(kw_only=True)
 class ConnectResult:
     """Result of a connect() call — carries identity, device memory, and
@@ -75,6 +190,7 @@ class ConnectResult:
                                           # back-compat. Scheduled for removal in a
                                           # future release. Do not read in new code.
     techmanual_document_ids: list[int] = field(default_factory=list)
+    topology_context: Optional["DeviceConnections"] = None  # this device's wiring slice
     metadata: dict = field(default_factory=dict)
     error: Optional[str] = None
     hint: Optional[str] = None
@@ -100,7 +216,9 @@ class DiagnosticResult:
     interface_type: Optional[str] = None
     checks: dict = field(default_factory=dict)   # per-alias: {check_name: {status, detail}}
     drivers: dict = field(default_factory=dict)  # system audit: {type: {python_deps, system_deps, status}}
-    action_items: list[str] = field(default_factory=list)  # most-blocking first
+    action_items: list[str] = field(default_factory=list)  # most-blocking first; install/blocking only
+    topology_warnings: list[str] = field(default_factory=list)  # soft wiring warnings; never blocks ready
+    topology_context: Optional["DeviceConnections"] = None  # this device's wiring slice
     device_memory: Optional[str] = None
     error: Optional[str] = None
 
