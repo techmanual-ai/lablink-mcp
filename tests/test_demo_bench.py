@@ -307,3 +307,29 @@ def test_visa_driver_reaches_simulator(scpi_pair) -> None:
     finally:
         for resource in resources:
             resource.close()
+
+
+# ---------------------------------------------------------------------------
+# Serial front-end teardown
+# ---------------------------------------------------------------------------
+
+
+def test_serial_server_stops_without_wedging(bench: Bench) -> None:
+    """stop() must join the reader before closing the pty.
+
+    Closing the master fd while the reader is blocked in os.read() leaves the
+    process in an uninterruptible wait on macOS that not even SIGKILL reaps,
+    which made `lablink-sim` impossible to Ctrl-C.
+    """
+    from lablink.demo.serial_port import PTY_AVAILABLE, SerialServer
+
+    if not PTY_AVAILABLE:
+        pytest.skip("pty unavailable on this platform")
+
+    server = SerialServer(bench, role="daq")
+    device_path = server.start()
+    assert device_path.startswith("/dev/")
+
+    server.stop()
+    assert server._thread is not None
+    assert not server._thread.is_alive(), "reader thread must exit before fds close"
