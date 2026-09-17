@@ -78,6 +78,54 @@ pip install lablink-mcp[all]     # all drivers
 
 ---
 
+## 🧪 Try it with no hardware
+
+LabLink ships a simulated bench, so you can watch an agent drive instruments
+before you connect anything real.
+
+```bash
+pip install lablink-mcp[visa,rest,serial,demo]
+lablink-sim --write-configs ~/.lablink/devices
+```
+
+That starts two simulated instruments behind real protocol front-ends:
+
+```
+  FG-100  SCPI    TCPIP0::127.0.0.1::5025::SOCKET
+  DAQ-8   SCPI    TCPIP0::127.0.0.1::5026::SOCKET
+  DAQ-8   REST    http://127.0.0.1:8080/api/v1
+  DAQ-8   serial  /dev/ttys006
+
+  wiring  FG-100:CH1 --coax--> DAQ-8:CH0
+```
+
+Nothing is mocked. The simulator speaks SCPI on a socket, so LabLink reaches
+it through the same `visa` driver it uses for a bench instrument — and the
+same `rest` and `serial` drivers besides. The generator's CH1 is patched into
+the DAQ's CH0, so this actually works:
+
+```bash
+lablink visa query sim_fgen "SOUR1:FREQ 1000"
+lablink visa query sim_fgen "SOUR1:VOLT 2.0"
+lablink visa query sim_fgen "OUTP1 ON"
+lablink visa query sim_daq  "MEAS:VOLT? (@0)"   # reads the waveform back
+```
+
+Add the topology to see *why* those two are connected:
+
+```bash
+cp examples/topology_sim.toml ~/.lablink/topology.toml
+lablink topology show sim_daq
+```
+
+Then ask an agent: *"set sim_fgen CH1 to a 1 kHz 2 V sine, enable the output,
+then read sim_daq CH0 and tell me what you expect to see."*
+
+All four aliases address one shared bench, so a change written over SCPI is
+visible over REST and serial in the same instant.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Create a device config

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lablink-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for direct AI agent control of lab devices — VISA/SCPI instruments, SSH hosts, REST APIs, serial devices, and Python environments"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -65,6 +65,7 @@ Changelog = "https://github.com/techmanual-ai/lablink-mcp/blob/main/CHANGELOG.md
 [project.scripts]
 lablink = "lablink.cli:cli"
 lablink-mcp = "lablink.mcp_server:main"
+lablink-sim = "lablink.demo.cli:main"
 
 [project.optional-dependencies]
 visa = ["pyvisa>=1.14", "pyvisa-py>=0.7"]
@@ -72,7 +73,8 @@ ssh = ["paramiko>=3.0"]
 rest = ["httpx>=0.27"]
 serial = ["pyserial>=3.5"]
 python_shell = []
-all = ["lablink-mcp[visa,ssh,rest,serial,python_shell]"]
+demo = []            # simulated bench; stdlib only
+all = ["lablink-mcp[visa,ssh,rest,serial,python_shell,demo]"]
 dev = ["pytest>=8.0", "pyvisa>=1.14", "pyvisa-py>=0.7", "paramiko>=3.0", "httpx>=0.27", "pyserial>=3.5"]
 
 [tool.hatch.build.targets.wheel]
