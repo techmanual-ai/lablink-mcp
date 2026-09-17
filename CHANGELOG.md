@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`techmanual_document_ids` is now `document_ids`.** The field is no longer
+  named after a specific documentation service; it carries opaque pointers into
+  whatever index the agent can reach, and LabLink still does not resolve them.
+  Not a breaking change — `techmanual_document_ids`, `techmanual_document_id`
+  and `document_id` are all accepted at load time and normalized to a list.
+  `connect()` and the CLI now report `document_ids`.
+
+### Removed
+
+- **`TMAI_API_KEY` from the documented environment variables.** LabLink never
+  read it; it belonged to a separate tool and only appeared in the docs.
+
 ## [0.2.0] - 2026-09-16
 
 ### Added

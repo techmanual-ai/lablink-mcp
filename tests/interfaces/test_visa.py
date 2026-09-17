@@ -56,12 +56,12 @@ class TestConnect:
         resource.query.return_value = "TEKTRONIX,MSO44,C012345,v1.0\n"
         driver = _driver_with_resource(resource)
 
-        result = driver.connect(_config(techmanual_document_ids=[42, 99]))
+        result = driver.connect(_config(document_ids=[42, 99]))
 
         assert result.success is True
         assert result.interface_type == "visa"
         assert "TEKTRONIX" in result.identity
-        assert result.techmanual_document_ids == [42, 99]
+        assert result.document_ids == [42, 99]
         assert result.metadata["model_number"] == "MSO44"
         assert session_registry.is_registered("test_scope")
         # device_memory is injected by the shared layer, not the driver.

@@ -8,8 +8,7 @@ LabLink is a local-first MCP server that gives AI agents direct, structured
 control over the devices and services they talk to — test instruments
 (VISA/SCPI), remote systems (SSH), web APIs (REST), serial devices, and
 user-supplied Python environments. One server, many protocol drivers, one
-install. [techmanual.ai](https://techmanual.ai) is an optional, highly
-complementary documentation companion.
+install.
 
 ---
 

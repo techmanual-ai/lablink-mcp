@@ -74,7 +74,18 @@ class TestLoadConfig:
             config = load_config("from_name")
         assert config.alias == "from_name"
 
-    def test_plural_document_ids(self, tmp_path):
+    def test_document_ids(self, tmp_path):
+        _write(
+            tmp_path,
+            "scope.toml",
+            b'type = "visa"\nalias = "scope"\nresource_string = "USB0::INSTR"\ntimeout_ms = 5000\n'
+            b"document_ids = [7, 8]\n",
+        )
+        with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
+            config = load_config("scope")
+        assert config.document_ids == [7, 8]
+
+    def test_legacy_plural_document_ids(self, tmp_path):
         _write(
             tmp_path,
             "scope.toml",
@@ -83,9 +94,9 @@ class TestLoadConfig:
         )
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             config = load_config("scope")
-        assert config.techmanual_document_ids == [1291, 1323]
+        assert config.document_ids == [1291, 1323]
 
-    def test_singular_document_id_backward_compat(self, tmp_path):
+    def test_legacy_singular_document_id_backward_compat(self, tmp_path):
         _write(
             tmp_path,
             "scope.toml",
@@ -94,7 +105,7 @@ class TestLoadConfig:
         )
         with patch.object(cfg_module, "get_config_dir", return_value=tmp_path):
             config = load_config("scope")
-        assert config.techmanual_document_ids == [142]
+        assert config.document_ids == [142]
 
     def test_unknown_keys_are_ignored(self, tmp_path):
         # Stray keys in the TOML must not break construction (filtered to fields).

@@ -284,8 +284,10 @@ fields would be noise on them.
 
 ### 7.3 Documented mixin (devices with manuals — VISA)
 
-`DocumentedConfig` adds `techmanual_document_ids: list[int]`, used for targeted
-[techmanual.ai](https://techmanual.ai) lookups. Drivers that target generic
+`DocumentedConfig` adds `document_ids: list[int]` — opaque pointers into
+whatever documentation index the agent can reach. LabLink never resolves them;
+it returns them on `connect()` so the agent can fetch the right pages instead
+of relying on training data. Drivers that target generic
 compute (SSH, REST, python_shell) do not inherit it by default; it can be added
 to any config later without migration impact, since an empty list means "no
 manuals."
@@ -294,7 +296,7 @@ manuals."
 
 | Driver | Adds |
 |--------|------|
-| `visa` | `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `techmanual_document_ids` |
+| `visa` | `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `document_ids` |
 | `ssh` | `host`, `port`, `username` + auth |
 | `rest` | `base_url`, `verify_ssl` + auth |
 | `serial` | `serial_port`, `baud_rate`, `data_bits`, `parity`, `stop_bits`, `read_termination`, `write_termination` |
@@ -308,8 +310,9 @@ next to SSH's integer `port` in side-by-side config examples.
 - Unknown `type` → `ConfigError` listing valid types.
 - Any path field (`auth_ssh_key_path`, `python_path`, `working_dir`) is run
   through `Path(value).expanduser()` at load time.
-- The plural `techmanual_document_ids` is canonical; a legacy singular
-  `techmanual_document_id` is accepted and converted to a one-element list.
+- `document_ids` is canonical. The legacy keys `techmanual_document_ids`,
+  `techmanual_document_id` and `document_id` are accepted at load time and
+  normalized to a list, so existing configs keep working.
 
 See [examples/configs/](../examples/configs/) for a complete template per driver.
 
@@ -559,7 +562,6 @@ No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
 | `LABLINK_TOPOLOGY_FILE` | `~/.lablink/topology.toml` | System topology file; resolved independently of `LABLINK_CONFIG_DIR` |
 | `LABLINK_VISA_BACKEND` | `@py` | PyVISA backend (`@py` or `@ni`) |
 | `LABLINK_LOG_DIR` | `~/.lablink/logs/` | Event log directory; `""` disables logging |
-| `TMAI_API_KEY` | — | techmanual.ai API key for agent-directed manual lookups (optional) |
 
 ---
 

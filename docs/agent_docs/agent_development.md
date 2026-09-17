@@ -16,7 +16,7 @@
 - Validate required fields at load time and raise a typed `ConfigError` with a clear message. Unknown `type` raises `ConfigError` listing all valid types.
 - Any field that accepts a filesystem path (e.g. `auth_ssh_key_path`, `python_path`, `working_dir`) must be processed with `Path(value).expanduser()` at load time. TOML does not auto-expand tildes.
 - Alias naming convention: `<vendor>_<model>` for T&M instruments, `<role>_<host>` for compute targets. Lowercase with underscores.
-- `techmanual_document_ids: list[int]` lives on `DocumentedConfig` (mixin inherited by VISA-style configs). The legacy singular `techmanual_document_id` is accepted at load time and auto-converted. Always write new configs using the plural list form.
+- `document_ids: list[int]` lives on `DocumentedConfig` (mixin inherited by VISA-style configs). Opaque pointers into an external documentation index; LabLink does not resolve them. The legacy keys `techmanual_document_ids`, `techmanual_document_id` and `document_id` are accepted at load time and normalized. Always write new configs using `document_ids`.
 
 ### MCP (FastMCP)
 - Follow the FastMCP stdio pattern.
@@ -104,7 +104,7 @@ Each driver registers operation tools whose **docstrings** carry the per-protoco
 
 - `diagnose()` to see which drivers are available
 - Per-driver tool docstrings for protocol semantics
-- `connect()` response (`interface_type`, `device_memory`, `techmanual_document_ids`) for runtime device context
+- `connect()` response (`interface_type`, `device_memory`, `document_ids`) for runtime device context
 
 Per-driver tool docstrings should cover:
 - What each parameter means for this protocol

@@ -54,8 +54,8 @@ def connect_cmd(alias: str) -> None:
     result = do_connect(alias)
     if result["success"]:
         click.echo(f"Connected: {result.get('identity')}")
-        if result.get("techmanual_document_ids"):
-            click.echo(f"techmanual document IDs: {result['techmanual_document_ids']}", err=True)
+        if result.get("document_ids"):
+            click.echo(f"document IDs: {result['document_ids']}", err=True)
     else:
         click.echo(f"Error: {result['error']}", err=True)
         click.echo(f"Hint: {result.get('hint')}", err=True)

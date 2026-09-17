@@ -87,13 +87,14 @@ quirks. Read it before issuing commands. (A deprecated `instrument_memory`
 field mirrors `device_memory` for back-compat; prefer
 `device_memory`.)
 
-## techmanual.ai (documented devices)
+## Documented devices
 
-For instruments, connect() returns techmanual_document_ids. If the techmanual.ai
-MCP tool is available, consult those documents before issuing commands instead
-of relying on training data. If the list is empty, search by manufacturer and
-model_number and write the discovered IDs back into the config so later
-sessions skip the search.
+For instruments, connect() returns `document_ids` — opaque pointers into
+whatever documentation index you have available. LabLink does not resolve
+them. If a documentation source is reachable, consult those documents before
+issuing commands rather than relying on training data. If the list is empty,
+look the device up by manufacturer and model_number and write the discovered
+IDs back into the config so later sessions skip the search.
 
 ## External devices (type = "external_mcp")
 
@@ -416,7 +417,7 @@ def connect(alias: str) -> dict:
 
     Resolves the driver from the config's `type` field. For VISA instruments
     this sends *IDN? and returns identity, device_memory (quirks from prior
-    sessions — read it before issuing commands), and techmanual_document_ids.
+    sessions — read it before issuing commands), and document_ids.
 
     Before calling, ensure ~/.lablink/devices/<alias>.toml exists. If it does
     not, create it — do not ask the user to. See server instructions.

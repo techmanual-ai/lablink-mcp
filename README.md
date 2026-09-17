@@ -253,7 +253,7 @@ export LABLINK_CONFIG_DIR=/path/to/devices/
 
 See [examples/configs/](examples/configs/) for complete templates.
 
-**VISA** — adds `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `techmanual_document_ids`
+**VISA** — adds `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `document_ids`
 
 **SSH** — adds `host`, `port`, `username`, auth fields (`auth_type`, `auth_ssh_key_path`, `auth_token_env`, etc.)
 
@@ -321,17 +321,15 @@ export LABLINK_VISA_BACKEND=@ni
 
 ---
 
-## Using with techmanual.ai (optional)
+## Pointing the agent at documentation (optional)
 
-[techmanual.ai](https://techmanual.ai) is a searchable index of technical manuals for T&M equipment. When both MCP servers are loaded, your agent can look up SCPI commands and execute them without human intervention.
-
-Add `techmanual_document_ids` to your VISA config to enable targeted lookups:
+Agents guess SCPI. If you have a documentation source the agent can reach — a manual index, an internal wiki, a vendor MCP server — record the relevant document IDs on the instrument's config:
 
 ```toml
-techmanual_document_ids = [1291, 1323]   # user manual, programming guide
+document_ids = [1291, 1323]   # e.g. user manual, programming guide
 ```
 
-When this field is set, `connect()` returns the IDs so the agent can fetch relevant pages without a search query.
+`connect()` returns them, so the agent can pull the right pages instead of searching or relying on training data. LabLink does not resolve these IDs; they are opaque pointers into whatever index you use.
 
 ---
 
@@ -379,7 +377,7 @@ one `serial` driver.
 - **No GUI.** The CLI is the only interface beyond MCP.
 - **Not a protocol library.** LabLink sends commands and returns responses; it
   does not parse or interpret SCPI or any other protocol syntax. That knowledge
-  lives in the agent or in [techmanual.ai](https://techmanual.ai).
+  lives in the agent or in whatever documentation source it can reach.
 - **Docker is not a primary install target.** USB/serial passthrough into
   containers defeats the point of local lab use.
 
@@ -479,7 +477,6 @@ export LABLINK_TOPOLOGY_FILE=/path/to/topology.toml
 | `LABLINK_TOPOLOGY_FILE` | `~/.lablink/topology.toml` | System topology file (independent of `LABLINK_CONFIG_DIR`) |
 | `LABLINK_VISA_BACKEND` | `@py` | pyvisa backend (`@py` or `@ni`) |
 | `LABLINK_LOG_DIR` | `~/.lablink/logs/` | Event log directory; set to `""` to disable |
-| `TMAI_API_KEY` | — | techmanual.ai API key for agent-directed manual lookups |
 
 ---
 

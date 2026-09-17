@@ -105,13 +105,15 @@ def load_config(alias: str) -> DriverConfig:
     kwargs["type"] = type_
     kwargs.setdefault("alias", alias)
 
-    # Legacy singular techmanual_document_id -> one-element plural list.
-    if (
-        "techmanual_document_ids" in field_names
-        and "techmanual_document_ids" not in kwargs
-        and raw.get("techmanual_document_id") is not None
-    ):
-        kwargs["techmanual_document_ids"] = [int(raw["techmanual_document_id"])]
+    # Legacy keys -> document_ids. Accepts the older vendor-specific names and
+    # the singular form, so existing configs keep working unchanged.
+    if "document_ids" in field_names and "document_ids" not in kwargs:
+        legacy_plural = raw.get("techmanual_document_ids")
+        legacy_singular = raw.get("techmanual_document_id", raw.get("document_id"))
+        if legacy_plural is not None:
+            kwargs["document_ids"] = [int(v) for v in legacy_plural]
+        elif legacy_singular is not None:
+            kwargs["document_ids"] = [int(legacy_singular)]
 
     for path_field in _PATH_FIELDS & field_names:
         if kwargs.get(path_field) is not None:
