@@ -189,7 +189,7 @@ class ConnectResult:
                                           # auto-populated by __post_init__ for
                                           # back-compat. Scheduled for removal in a
                                           # future release. Do not read in new code.
-    techmanual_document_ids: list[int] = field(default_factory=list)
+    document_ids: list[int] = field(default_factory=list)  # external manual/doc pointers
     topology_context: Optional["DeviceConnections"] = None  # this device's wiring slice
     metadata: dict = field(default_factory=dict)
     error: Optional[str] = None
@@ -269,10 +269,13 @@ class AuthConfig:
 @dataclass(kw_only=True)
 class DocumentedConfig:
     """Mixin for drivers that connect to documented devices (T&M instruments).
-    Carries techmanual.ai document pointers. Inherited by VisaDriverConfig.
+
+    Carries opaque pointers into whatever documentation index the agent uses.
+    LabLink does not resolve them; it surfaces them on connect() so the agent
+    can look the device up in its own source. Inherited by VisaDriverConfig.
     """
 
-    techmanual_document_ids: list[int] = field(default_factory=list)
+    document_ids: list[int] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

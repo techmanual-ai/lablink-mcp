@@ -188,7 +188,7 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
             alias=config.alias,
             interface_type="visa",
             identity=idn,
-            techmanual_document_ids=list(config.techmanual_document_ids),
+            document_ids=list(config.document_ids),
             metadata={
                 "manufacturer": config.manufacturer,
                 "model_number": config.model_number,

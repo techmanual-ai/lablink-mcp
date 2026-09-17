@@ -1,6 +1,6 @@
 """VISA driver config.
 
-VisaDriverConfig inherits DocumentedConfig (techmanual.ai document pointers)
+VisaDriverConfig inherits DocumentedConfig (external document pointers)
 because VISA targets are documented T&M instruments.
 """
 

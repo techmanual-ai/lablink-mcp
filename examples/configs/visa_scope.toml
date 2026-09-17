@@ -17,9 +17,10 @@ write_termination = "\n"
 
 # --- Optional fields ---
 
-# Direct link to this instrument's manual in techmanual.ai.
-# When present, the agent can look up the manual without a search query.
-# techmanual_document_id = 142
+# Pointers into whatever documentation index your agent can reach.
+# When present, connect() returns them so the agent can fetch the right
+# pages instead of searching. LabLink does not resolve these IDs.
+# document_ids = [142]
 
 # Human-readable description for 'lablink list' output.
 # description = "4-channel mixed signal oscilloscope, bench 3"
