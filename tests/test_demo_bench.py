@@ -113,14 +113,25 @@ def scpi_pair(bench: Bench):
 
 
 def _scpi(server: ScpiServer, *commands: str) -> list[str]:
-    """Send commands over a real socket; return replies to the queries."""
+    """Send commands over a real socket; return replies to the queries.
+
+    Always round-trips at least one query. Commands are processed on the
+    server's handler thread, so a write-only call would return before the
+    server had necessarily applied it — and a subsequent read on the *other*
+    instrument's connection could then race ahead of it. Trailing ``*OPC?``
+    is the SCPI idiom for exactly this, and makes the helper synchronous.
+    """
+    # A query is any command containing '?' — note that a channel-list suffix
+    # means queries do not necessarily *end* with it, as in "MEAS:VOLT? (@0)".
+    queries = sum(1 for c in commands if "?" in c)
+    if queries == 0:
+        commands = (*commands, "*OPC?")
+        queries = 1
+
     replies: list[str] = []
     with socket.create_connection(server.server_address, timeout=5) as sock:
         sock.sendall(("".join(f"{c}\n" for c in commands)).encode())
-        # A query is any command containing '?' — note that a channel-list
-        # suffix means queries do not necessarily *end* with it, as in
-        # "MEAS:VOLT? (@0)".
-        expected = sum(1 for c in commands if "?" in c)
+        expected = queries
         buffer = b""
         while len(replies) < expected:
             chunk = sock.recv(4096)
@@ -156,7 +167,8 @@ def test_scpi_cross_instrument_patch(scpi_pair) -> None:
     gen, daq = scpi_pair
     _scpi(gen, "SOUR1:VOLT 4.0", "SOUR1:FREQ 1000", "OUTP1 ON")
     # One connection, many queries — a fresh socket per reading is both slower
-    # and unlike how a driver actually holds a session open.
+    # and unlike how a driver actually holds a session open. The generator
+    # setup above is already synchronous; see _scpi.
     readings = [float(v) for v in _scpi(daq, *["MEAS:VOLT? (@0)"] * 60)]
     assert max(abs(v) for v in readings) > 1.0
 
@@ -286,6 +298,10 @@ def test_visa_driver_reaches_simulator(scpi_pair) -> None:
         gen_res.write("SOUR1:VOLT 3.0")
         gen_res.write("SOUR1:FREQ 1000")
         gen_res.write("OUTP1 ON")
+        # Round-trip a query before polling the DAQ on its own connection:
+        # writes are applied on the generator's handler thread, so without
+        # this the reads below can race ahead of the output being enabled.
+        assert gen_res.query("OUTP1?").strip() == "1"
         readings = [float(daq_res.query("MEAS:VOLT? (@0)")) for _ in range(60)]
         assert max(abs(v) for v in readings) > 1.0
     finally:
