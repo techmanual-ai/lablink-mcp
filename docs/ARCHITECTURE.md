@@ -92,11 +92,19 @@ lablink-mcp/
 │       ├── serial/
 │       ├── python_shell/           # + bootstrap.py (subprocess REPL)
 │       └── external/               # routing stub for vendor-supplied MCP servers
+│   └── demo/                       # simulated bench (§16); optional [demo] extra
+│       ├── instruments.py          # Bench, DAQ, WaveformGen, Patch — pure simulation
+│       ├── scpi.py                 # SCPI-over-TCP front-end (ScpiInstrument, ScpiServer)
+│       ├── rest.py                 # JSON API front-end on http.server
+│       ├── serial_port.py          # pty front-end (POSIX only)
+│       └── cli.py                  # `lablink-sim` entrypoint
 ├── tests/
-│   └── test_system.py              # topology subsystem tests
+│   ├── test_system.py              # topology subsystem tests
+│   └── test_demo_bench.py          # simulated-bench integration tests
 ├── examples/
 │   ├── configs/                    # one example .toml per driver
-│   └── topology.toml               # RF-bench topology example
+│   ├── topology.toml               # RF-bench topology example
+│   └── topology_sim.toml           # topology for the simulated bench
 └── pyproject.toml
 ```
 
@@ -595,3 +603,49 @@ The `system_topology` tool is the one caller that surfaces parse errors directly
 4. **alias/id collision** — a passive `id` that equals a managed node's `alias` (would be silently shadowed by alias-first port resolution).
 
 All are soft warnings; `validate_system` never raises.
+
+---
+
+## 16. Simulated Bench (`lablink/demo/`)
+
+An optional simulated bench so LabLink can be evaluated with no hardware.
+Installed via the `demo` extra (no dependencies — stdlib only) and started
+with `lablink-sim`.
+
+### 16.1 Design constraint: no special-casing in the drivers
+
+The simulator is reached through the **real** drivers. It is not a mock, a
+fake driver, or a test double registered in `DRIVER_REGISTRY`. It serves real
+protocols on real sockets, so `visa`, `rest` and `serial` connect to it with
+ordinary configs and no code path of their own:
+
+| Front-end | Driver exercised | Address |
+|-----------|------------------|---------|
+| `scpi.py` | `visa` (pyvisa-py raw socket) | `TCPIP0::127.0.0.1::5025::SOCKET` |
+| `rest.py` | `rest` | `http://127.0.0.1:8080/api/v1` |
+| `serial_port.py` | `serial` (pty) | `/dev/ttysNNN` |
+| direct import | `python_shell` | `from lablink.demo import Bench` |
+
+This is the point of the module: what an evaluator runs is the shipped code.
+Nothing in `lablink/` outside `lablink/demo/` is aware the simulator exists.
+
+### 16.2 One shared `Bench`
+
+All front-ends hold a reference to a single `Bench`, so a setting written over
+one protocol is immediately visible over the others. `Bench` owns the two
+instruments plus a `list[Patch]` describing the cables between them.
+
+`Patch(src_channel, dst_channel, attenuation_db)` is what makes the topology
+demonstrable: `Bench.driven_voltage()` sums the generator's instantaneous
+output through each patch feeding a DAQ channel, so enabling an output
+actually changes what the DAQ measures. `examples/topology_sim.toml` mirrors
+the default patch — **change one and change the other.**
+
+### 16.3 Error mapping
+
+`instruments.py` raises `SimError` for any invalid parameter. Each front-end
+translates it into that protocol's idiom: the SCPI servers push it onto an
+error queue readable via `SYST:ERR?` (`-222` out of range, `-113` undefined
+header, `-224` illegal parameter), and the REST server returns HTTP 400.
+Simulation code never raises a LabLink exception type — `lablink/demo/` does
+not import from `lablink.exceptions`.

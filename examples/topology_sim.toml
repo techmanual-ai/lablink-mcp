@@ -1,0 +1,53 @@
+# Topology for the simulated bench started by `lablink-sim`.
+#
+#   cp examples/topology_sim.toml ~/.lablink/topology.toml
+#
+# This is the file that makes system_topology() meaningful on a bench with no
+# cables in it: the agent can see that FG-100 CH1 feeds DAQ-8 CH0, so it knows
+# why changing the generator changes what the DAQ reads.
+#
+# Constraints are ADVISORY ONLY — LabLink surfaces them to the agent but does
+# not enforce them.
+
+name = "lablink_simulated_bench"
+
+[[node]]
+alias = "sim_fgen"
+role  = "function generator"
+
+[[node]]
+alias = "sim_daq"
+role  = "data acquisition module"
+
+[[node]]
+alias = "sim_daq_rest"
+role  = "data acquisition module (REST interface to the same hardware)"
+
+[[node]]
+alias = "sim_daq_serial"
+role  = "data acquisition module (serial interface to the same hardware)"
+
+# The patch cable. Mirrors Bench.patches in lablink/demo/instruments.py —
+# change one and change the other.
+[[link]]
+from   = "sim_fgen:CH1"
+to     = "sim_daq:CH0"
+signal = "generator output under test"
+params = { impedance_ohm = 50, coupling = "AC", attenuation_db = 0 }
+
+  [[link.constraint]]
+  severity = "warning"
+  limit    = "amplitude <= 10.0"
+  note     = "DAQ-8 CH0 input range defaults to +/-10 V; readings clamp above that."
+
+# sim_daq, sim_daq_rest and sim_daq_serial are three interfaces onto one
+# simulated instrument, not three instruments. The net records that so the
+# agent does not treat them as independent measurement points.
+[[net]]
+name      = "daq8_interfaces"
+signal    = "same DAQ-8 reached over three protocols"
+endpoints = [
+  { port = "sim_daq:SCPI",          role = "primary" },
+  { port = "sim_daq_rest:HTTP",     role = "alternate" },
+  { port = "sim_daq_serial:UART",   role = "alternate" },
+]
