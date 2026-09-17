@@ -1,0 +1,182 @@
+name: Release
+
+# Tag-triggered release. Push an annotated tag and this builds, tests,
+# publishes to PyPI via Trusted Publishing (OIDC — no API token stored
+# anywhere), and cuts the GitHub release.
+#
+#   git tag -a v0.3.0 -m "v0.3.0" && git push origin v0.3.0
+#
+# Dry run without publishing: run this workflow manually from the Actions tab
+# with "publish" left unchecked.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to PyPI (leave off for a build-only dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The repo carries the version in three places. Catch a mismatch here,
+  # before anything is uploaded — a version burned on PyPI cannot be reused.
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: Verify tag matches pyproject.toml and server.json
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re, sys, tomllib, pathlib
+
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          server = json.loads(pathlib.Path("server.json").read_text())
+          server_versions = {server["version"], *(p["version"] for p in server["packages"])}
+
+          ref = os.environ.get("GITHUB_REF", "")
+          tag = ref.removeprefix("refs/tags/v") if ref.startswith("refs/tags/") else None
+
+          expected = {"pyproject.toml": pyproject}
+          for i, v in enumerate(sorted(server_versions)):
+              expected[f"server.json[{i}]"] = v
+          if tag:
+              expected["git tag"] = tag
+
+          distinct = set(expected.values())
+          if len(distinct) != 1:
+              print("Version mismatch:", file=sys.stderr)
+              for source, value in expected.items():
+                  print(f"  {source}: {value}", file=sys.stderr)
+              sys.exit(1)
+
+          version = distinct.pop()
+          print(f"version={version}")
+          PY
+
+      - name: Confirm this version is not already on PyPI
+        run: |
+          V="${{ steps.check.outputs.version }}"
+          if curl -sf "https://pypi.org/pypi/lablink-mcp/$V/json" > /dev/null; then
+            echo "::error::lablink-mcp $V is already on PyPI. Version numbers cannot be reused — bump and re-tag."
+            exit 1
+          fi
+          echo "lablink-mcp $V is not yet published."
+
+  test:
+    needs: check-version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v4
+
+      - run: uv pip install -e ".[dev]" --system
+
+      - run: pytest tests/ -v
+
+  build:
+    needs: [check-version, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pipx run build
+
+      - name: Check distribution metadata
+        run: pipx run twine check dist/*
+
+      - name: Verify the wheel carries the demo bench and its entry point
+        run: |
+          python - <<'PY'
+          import glob, zipfile, sys
+          wheel = sorted(glob.glob("dist/*.whl"))[-1]
+          names = zipfile.ZipFile(wheel).namelist()
+          missing = [p for p in (
+              "lablink/demo/__init__.py",
+              "lablink/demo/cli.py",
+              "lablink/demo/instruments.py",
+              "lablink/demo/scpi.py",
+          ) if p not in names]
+          entry = next((n for n in names if n.endswith("entry_points.txt")), None)
+          scripts = zipfile.ZipFile(wheel).read(entry).decode() if entry else ""
+          if missing or "lablink-sim" not in scripts:
+              print(f"missing files: {missing}", file=sys.stderr)
+              print(f"entry points:\n{scripts}", file=sys.stderr)
+              sys.exit(1)
+          print(f"{wheel}: demo package and lablink-sim entry point present")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    needs: [check-version, build]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    # Trusted Publishing: PyPI verifies this OIDC identity, so no API token
+    # is stored in repo secrets or on anyone's machine. Configured once on
+    # PyPI against owner/repo + this workflow filename + this environment.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lablink-mcp
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [check-version, publish-pypi]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub release with notes from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          # Pull this version's section out of the changelog for the release body.
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md for details." > notes.md
+          gh release create "v$VERSION" dist/* \
+            --title "v$VERSION" \
+            --notes-file notes.md
