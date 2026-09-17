@@ -372,8 +372,9 @@ one `serial` driver.
 
 - **No server component.** LabLink runs on your local machine. There is no cloud
   deployment or hosted endpoint.
-- **No instrument simulation.** Tests mock the driver libraries; real use needs
-  real hardware.
+- **No simulation of your instrument.** No driver has a simulation code path;
+  `lablink-sim` is a separate optional bench that the real drivers connect to
+  over real protocols, to evaluate LabLink without hardware.
 - **No GUI.** The CLI is the only interface beyond MCP.
 - **Not a protocol library.** LabLink sends commands and returns responses; it
   does not parse or interpret SCPI or any other protocol syntax. That knowledge
