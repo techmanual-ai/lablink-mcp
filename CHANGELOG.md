@@ -6,7 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-16
+
 ### Added
+
+- **Simulated bench (`lablink-sim`)** — try LabLink with no hardware. Installed
+  via the new `demo` extra (stdlib only, no dependencies) and started with
+  `lablink-sim --write-configs ~/.lablink/devices`. Serves two simulated
+  instruments — an `FG-100` function generator and a `DAQ-8` acquisition module
+  — behind four real protocol front-ends at once: SCPI over TCP (reached by the
+  `visa` driver as `TCPIP0::127.0.0.1::5025::SOCKET`), a JSON API (`rest`), a
+  pseudo-terminal (`serial`, POSIX only), and direct import (`python_shell`).
+  Nothing is mocked: the drivers connect to it with ordinary configs and no
+  special-case code path, so what an evaluator runs is the shipped code.
+  The generator's CH1 is patched into the DAQ's CH0, so setting a waveform on
+  one instrument changes what the other measures — which gives
+  `system_topology` something to describe on a bench with no cables in it.
+  Ships `examples/topology_sim.toml` to match, and a README quickstart.
 
 - **`system_topology` tool** — a new shared lifecycle tool (alongside `connect`,
   `disconnect`, `list_devices`, `diagnose`) that surfaces a machine-readable map
