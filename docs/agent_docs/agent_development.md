@@ -30,6 +30,7 @@
 - Click root group in `lablink/cli.py`. Shared subcommands always present. Per-driver subgroups (`lablink visa ...`, `lablink ssh ...`, etc.) registered via each driver's `register_cli_commands(group)` method, mirroring the MCP tool registration pattern.
 - Status/diagnostic output goes to stderr. Command output goes to stdout.
 - CLI commands should be thin wrappers over the same per-driver code paths used by MCP tools.
+- A CLI-only command (e.g. `scan`) still keeps its logic in a module the command calls — never in the command body. The command formats output; the module is what tests exercise without click. Behavior that crosses two drivers belongs in a shared module (`discovery.py`, `system.py`), not in one of the drivers.
 
 ## 2. Environment & Package Management
 
@@ -89,7 +90,8 @@ The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tool
 
 - **Framework:** `pytest`.
 - **Requirement:** every new function in `lablink/` must have unit tests.
-- **Mocking:** use `unittest.mock` to mock `pyvisa.ResourceManager`, `paramiko.SSHClient`, `httpx.Client`, `serial.Serial`, and subprocess equivalents. Tests must never open a real connection.
+- **Mocking:** use `unittest.mock` to mock `pyvisa.ResourceManager`, `paramiko.SSHClient`, `httpx.Client`, `serial.Serial`, and subprocess equivalents. Tests must never open a real connection. This includes enumeration APIs (`list_resources()`, `serial.tools.list_ports.comports()`) — a sweep that touches the real machine gives a different answer on every developer's laptop.
+- **Simulating a missing extra:** `monkeypatch.setitem(sys.modules, "pyvisa", None)` makes a lazy `import pyvisa` raise `ImportError` exactly as an uninstalled extra would. Prefer it to patching `check_python_deps()` when what you are testing is the lazy-import fallback itself.
 - **Test location:** `tests/test_shared_tools.py` for shared lifecycle tools, `tests/test_dispatch.py` for type→driver dispatch and dep-presence behavior, `tests/interfaces/test_<type>.py` for per-driver implementations.
 - **No hardware-dependent tests in CI.** If a test requires real hardware, mark it `@pytest.mark.skip(reason="requires hardware")` and document the manual test procedure.
 - **Dispatch behavior to keep covered:**

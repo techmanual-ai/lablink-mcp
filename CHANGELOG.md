@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`lablink scan`** — device discovery from the command line. Enumerates every
+  VISA resource and serial port on the machine, asks each candidate `*IDN?`
+  with a short per-probe timeout, and prints a table of resource string,
+  interface type, the parsed identity fields, and a suggested `<vendor>_<model>`
+  alias to copy into a config. A device that is found but never answers is
+  reported as found-but-unidentified rather than hidden, and a sweep whose
+  driver extra is not installed is reported with its install command — `scan`
+  is useful with no drivers installed at all. Replaces the `python -c "import
+  pyvisa; ..."` one-liner the README used to hand out for finding a resource
+  string.
+
 ### Changed
 
 - **`techmanual_document_ids` is now `document_ids`.** The field is no longer

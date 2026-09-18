@@ -5,12 +5,13 @@ Intended for development, debugging, and config validation.
 
 Structure mirrors the MCP tool surface (docs/ARCHITECTURE.md §4):
   - Shared lifecycle commands (always present): connect, disconnect, list,
-    diagnose.
+    diagnose, scan.
   - Per-driver subgroups (present only when the driver's deps are installed),
     registered via each driver's register_cli_commands(): e.g.
     `lablink visa query <alias> "<cmd>"`, `lablink visa write <alias> "<cmd>"`.
 
 Usage:
+    lablink scan
     lablink list
     lablink diagnose [alias]
     lablink connect <alias>
@@ -24,6 +25,8 @@ import sys
 
 import click
 
+from lablink import discovery
+from lablink.config import get_config_dir
 from lablink.interfaces import DRIVER_REGISTRY
 
 # Shared lifecycle logic + the driver-instance accessor live in mcp_server so
@@ -112,6 +115,78 @@ def diagnose_cmd(alias: str | None) -> None:
             click.echo(f"  {i}. {item}", err=True)
 
     click.echo(json.dumps(report, indent=2))
+
+
+_SCAN_HEADERS = (
+    "RESOURCE",
+    "TYPE",
+    "MANUFACTURER",
+    "MODEL",
+    "SERIAL",
+    "FIRMWARE",
+    "SUGGESTED ALIAS",
+)
+
+
+def _scan_row(device) -> tuple[str, ...]:
+    return (
+        device.resource,
+        device.interface_type,
+        device.manufacturer or "-",
+        device.model or "-",
+        device.serial_number or "-",
+        device.firmware or "-",
+        device.suggested_alias or "-",
+    )
+
+
+def _echo_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> None:
+    """Print a space-aligned table to stdout. `rows` must not be empty."""
+    widths = [
+        max(len(headers[i]), max(len(row[i]) for row in rows))
+        for i in range(len(headers))
+    ]
+    for line in (headers, *rows):
+        click.echo("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(line)).rstrip())
+
+
+@cli.command(name="scan")
+def scan_cmd() -> None:
+    """Discover attached devices and identify them with *IDN?.
+
+    Enumerates VISA resources and serial ports, asks each candidate for its
+    identity, and prints one row per device with a suggested alias. A device
+    that does not answer is still listed — as found, not identified.
+
+    The table goes to stdout; counts, install steps, and per-device detail go
+    to stderr.
+    """
+    click.echo("Scanning VISA resources and serial ports...", err=True)
+    result = discovery.scan()
+
+    for item in result.action_items:
+        click.echo(f"  ! {item}", err=True)
+
+    if not result.devices:
+        click.echo("No devices found.", err=True)
+        click.echo(discovery.EMPTY_SCAN_HINT, err=True)
+        return
+
+    _echo_table(_SCAN_HEADERS, [_scan_row(d) for d in result.devices])
+
+    identified = [d for d in result.devices if d.identified]
+    click.echo(
+        f"\n{len(result.devices)} device(s) found, {len(identified)} identified.",
+        err=True,
+    )
+    for device in result.devices:
+        if device.detail:
+            click.echo(f"  {device.resource}: {device.detail}", err=True)
+    click.echo(
+        f"\nTo use one, write {get_config_dir()}/<alias>.toml with "
+        'type = "<driver>" and the resource above.',
+        err=True,
+    )
 
 
 # --- Topology subgroup (shared; always registered) -------------------------

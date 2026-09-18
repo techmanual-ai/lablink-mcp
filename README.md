@@ -128,7 +128,30 @@ visible over REST and serial in the same instant.
 
 ## 🚀 Quick Start
 
-### 1. Create a device config
+### 1. See what is attached
+
+```bash
+lablink scan
+```
+
+`scan` enumerates every VISA resource and serial port on the machine, asks each
+one `*IDN?`, and prints what answered:
+
+```
+RESOURCE                              TYPE    MANUFACTURER  MODEL   SERIAL   FIRMWARE  SUGGESTED ALIAS
+USB0::0x0699::0x0527::C012345::INSTR  USB     TEKTRONIX     MSO44   C012345  1.2.3     tektronix_mso44
+/dev/cu.usbserial-1420                serial  -             -       -        -         -
+
+2 device(s) found, 1 identified.
+  /dev/cu.usbserial-1420: USB-Serial CH340, VID:PID=1a86:7523 (no *IDN? reply)
+```
+
+A device that is found but never answers is still listed — not everything on a
+serial bus speaks SCPI, and knowing it is there is more useful than hiding it.
+A sweep whose driver is not installed is reported with its install command
+rather than skipped silently.
+
+### 2. Create a device config
 
 One TOML file per device at `~/.lablink/devices/<alias>.toml`. The `type` field selects the driver.
 
@@ -145,10 +168,7 @@ timeout_ms  = 5000
 description = "4-channel mixed signal oscilloscope"
 ```
 
-Find your resource string:
-```bash
-python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
-```
+`resource_string` and the alias both come straight from `lablink scan`.
 
 **SSH host:**
 
@@ -166,7 +186,7 @@ timeout_ms  = 10000
 
 See [examples/configs/](examples/configs/) for templates for all drivers.
 
-### 2. Verify with the CLI
+### 3. Verify with the CLI
 
 ```bash
 lablink list                              # show all configured devices
@@ -174,7 +194,7 @@ lablink connect tek_mso44                 # open session, print identity
 lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 ```
 
-### 3. Add to your MCP client
+### 4. Add to your MCP client
 
 **Claude Code** — add to `~/.claude.json` (global) or `.mcp.json` in your project root:
 
@@ -272,6 +292,7 @@ Credentials are always referenced by environment variable name — never stored 
 The CLI mirrors the MCP tool surface for development and debugging.
 
 ```bash
+lablink scan                                    # discover attached devices, identify with *IDN?
 lablink list                                    # list all configured devices
 lablink diagnose                                # system dep check (all drivers)
 lablink diagnose tek_mso44                      # device-specific reachability check
@@ -295,7 +316,7 @@ Per-protocol commands appear only when that driver's deps are installed.
 
 ## VISA Troubleshooting
 
-**`list_resources()` returns an empty tuple `()`**
+**`lablink scan` finds nothing (`list_resources()` returns an empty tuple)**
 
 - Confirm the instrument is powered on and the cable is connected.
 - For USB instruments on macOS, check System Settings → Privacy & Security → USB.

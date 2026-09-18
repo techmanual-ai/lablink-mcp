@@ -236,6 +236,50 @@ class SystemDepStatus:
 
 
 # ---------------------------------------------------------------------------
+# Discovery types (docs/ARCHITECTURE.md §17)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class DiscoveredDevice:
+    """One candidate found by a bus sweep (`lablink scan`).
+
+    ``identified`` is False when the candidate was found on a bus but never
+    answered ``*IDN?``. Such a candidate is still reported: not everything on a
+    serial bus speaks SCPI, and "found, did not identify" is more useful than a
+    hidden device.
+
+    ``resource`` is the value a config needs — a VISA resource string when
+    ``driver_type`` is "visa", an OS port path when it is "serial".
+    """
+
+    resource: str
+    driver_type: str                      # config `type` value: "visa" | "serial"
+    interface_type: str                   # "TCPIP" | "USB" | "GPIB" | "ASRL" | "serial"
+    identified: bool = False
+    idn: Optional[str] = None             # raw *IDN? reply
+    manufacturer: Optional[str] = None    # *IDN? field 1
+    model: Optional[str] = None           # *IDN? field 2
+    serial_number: Optional[str] = None   # *IDN? field 3
+    firmware: Optional[str] = None        # *IDN? field 4
+    suggested_alias: Optional[str] = None  # <vendor>_<model>; None when unidentified
+    detail: Optional[str] = None          # bus metadata and/or why the probe failed
+
+
+@dataclass(kw_only=True)
+class ScanResult:
+    """Result of a discovery sweep.
+
+    ``action_items`` carries missing-dependency install steps in the same tone
+    as ``DiagnosticResult.action_items``: a sweep that could not run is
+    reported with its install command, never skipped silently.
+    """
+
+    devices: list[DiscoveredDevice] = field(default_factory=list)
+    action_items: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Config types
 # ---------------------------------------------------------------------------
 

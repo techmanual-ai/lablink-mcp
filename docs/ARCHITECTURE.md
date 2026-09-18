@@ -80,6 +80,7 @@ lablink-mcp/
 │   ├── base.py                     # data models, config dataclasses, Session, the driver ABC
 │   ├── config.py                   # TOML loader via DRIVER_CONFIG_REGISTRY; device-memory reader; load_system()
 │   ├── system.py                   # topology graph logic: device_slice(), validate_system()
+│   ├── discovery.py                # bus sweep behind `lablink scan`: scan(), parse_idn()
 │   ├── session.py                  # _sessions registry; three-state lookup
 │   ├── event_logger.py             # JSONL event log
 │   ├── exceptions.py               # ConfigError, SessionError, DriverError
@@ -100,6 +101,7 @@ lablink-mcp/
 │       └── cli.py                  # `lablink-sim` entrypoint
 ├── tests/
 │   ├── test_system.py              # topology subsystem tests
+│   ├── test_discovery.py           # discovery sweep tests
 │   └── test_demo_bench.py          # simulated-bench integration tests
 ├── examples/
 │   ├── configs/                    # one example .toml per driver
@@ -145,6 +147,11 @@ tools, then for each driver whose deps are present, instantiates it and calls
 **`lablink/cli.py`** — Click root group. Shared subcommands always present; per-driver
 subgroups (`lablink visa …`) registered via `register_cli_commands(group)` with
 the same dep gating as the MCP server.
+
+**`lablink/discovery.py`** — the bus sweep behind `lablink scan` (§17).
+`scan()` enumerates VISA resources and serial ports, probes each with `*IDN?`,
+and returns a `ScanResult`. Depends on `base`, `event_logger` and the VISA
+driver's interface-type helper; its third-party imports are lazy.
 
 **`lablink/event_logger.py`** — appends one JSONL entry per tool call to
 `~/.lablink/logs/YYYY-MM-DD.jsonl`. Never raises (§8.4).
@@ -651,3 +658,56 @@ error queue readable via `SYST:ERR?` (`-222` out of range, `-113` undefined
 header, `-224` illegal parameter), and the REST server returns HTTP 400.
 Simulation code never raises a LabLink exception type — `lablink/demo/` does
 not import from `lablink.exceptions`.
+
+---
+
+## 17. Device Discovery (`lablink scan`)
+
+Discovery answers the first question a new install has — *what is attached, and
+what is it?* — so the user never has to hand-hunt a resource string.
+
+### 17.1 Module placement
+
+Discovery crosses two drivers (`visa`, `serial`), so it is a **shared
+subsystem**, not a driver method — the same split the topology subsystem uses
+(§15.1):
+
+- **Data models → `lablink/base.py`** — `DiscoveredDevice`, `ScanResult`.
+- **Sweep logic → `lablink/discovery.py`** — `scan()`, plus the pure helpers
+  `parse_idn()` and `suggest_alias()`.
+- **Rendering → `lablink/cli.py`** — the `scan` command is a shared lifecycle
+  command alongside `diagnose` and `list`; it only formats the table. Keeping
+  the logic in the module means tests reach it without click.
+
+`scan` is CLI-only for now: it is a setup step the human (or an agent with a
+shell) runs before any alias exists, and every MCP tool is alias-addressed.
+
+### 17.2 Probe contract
+
+1. **Enumerate** — `pyvisa.ResourceManager(...).list_resources()` for VISA,
+   `serial.tools.list_ports.comports()` for serial ports (which also yields
+   description, VID/PID and manufacturer for the report).
+2. **Probe** — open, write `*IDN?`, read the reply, close. The per-probe
+   timeout (`DEFAULT_PROBE_TIMEOUT_S`, 2s) is deliberately short so one dead
+   resource cannot stall the sweep; the worst case is bounded by the number of
+   candidates, not by the slowest one.
+3. **Report everything found.** A candidate that cannot be opened, or that
+   never answers, is still returned with `identified=False` and a `detail`
+   saying why. Not everything on a serial bus speaks SCPI, and "found, did not
+   identify" is more actionable than a hidden device. Probes therefore catch
+   `Exception` broadly — a probe is a question, not an operation.
+4. **Suggest an alias** — `<vendor>_<model>` from the `*IDN?` fields,
+   lowercase with underscores (the §7.1 alias convention). None when the device
+   did not identify.
+
+### 17.3 Missing drivers degrade, they do not fail
+
+Each sweep lazy-imports its library and, on `ImportError`, returns no devices
+plus one `ScanResult.action_items` entry naming the extra to install —
+identical in tone and shape to `DiagnosticResult.action_items` (§9). The other
+sweeps still run. `lablink scan` with no extras installed prints two install
+steps and the empty-scan explanation, never a traceback.
+
+A VISA resource string that is not enumerable (a raw TCP `SOCKET` resource, a
+pty) cannot be discovered by either sweep — only probed once known. That is a
+property of the buses, not of `scan`.
