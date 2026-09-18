@@ -73,8 +73,10 @@ driver. Two tool layers:
 You own device configuration — do not ask the user to hand-edit files. Write
 ~/.lablink/devices/<alias>.toml with a `type` field plus that driver's required
 fields. Alias convention: <vendor>_<model> for instruments, <role>_<host> for
-compute targets; lowercase with underscores. For VISA, discover the resource
-string with:
+compute targets; lowercase with underscores. To learn what is attached, run
+`lablink scan` if you can run shell commands — it enumerates VISA resources and
+serial ports, identifies each with *IDN?, and prints the resource string and a
+suggested alias to put in the config. Otherwise, for VISA:
   python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
 An empty result means the instrument is off, unplugged, or needs a backend —
 diagnose before asking the user.

@@ -2,7 +2,7 @@
 # Copy to ~/.lablink/devices/<alias>.toml and update for your hardware.
 #
 # Find your resource string by running:
-#   python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
+#   lablink scan
 
 # --- Required fields ---
 
