@@ -39,10 +39,10 @@
 LabLink gives an AI agent direct, structured access to lab hardware and services — without a human in the loop. Connect by alias, send commands, read results, and iterate across any combination of devices in a single session.
 
 - **5 protocol drivers** out of the box: VISA/SCPI, SSH, REST, serial, and a Python subprocess shell
-- **Per-protocol tool names** (`visa_query`, `ssh_exec`, `rest_get`) — no leaky one-size-fits-all interface
-- **Install only what you need** — drivers are optional extras; the server runs with zero installed
-- **`diagnose()`** surfaces exactly what is missing or unreachable before the agent tries to use it
-- **Extensible** — add a driver with no changes to the core server or CLI
+- **Per-protocol tool names** (`visa_query`, `ssh_exec`, `rest_get`) rather than one leaky, one-size-fits-all interface
+- Drivers are optional extras, so you install only the ones you need; the server runs with zero installed
+- **`diagnose()`** reports what is missing or unreachable before the agent tries to use it
+- Adding a driver takes no changes to the core server or CLI
 
 ---
 
@@ -59,10 +59,10 @@ Per-driver tools register only when that driver's dependencies are installed.
 | **Serial** | `serial` | pyserial (RS232/RS422/RS485) | `serial_query`, `serial_write`, `serial_read`, `serial_flush` | `[serial]` | ⚪ |
 | **Python shell** | `python_shell` | subprocess REPL | `python_shell_exec`, `python_shell_eval` | `[python_shell]` | ✅ |
 
-An `external` routing stub also lets a device be handled by a vendor-supplied MCP server,
-surfacing routing hints to the agent on `connect()`.
+An `external` routing stub also lets a device be handled by a vendor-supplied MCP server.
+`connect()` returns the routing hints for it.
 
-> **Legend** — ✅ exercised end-to-end on real hardware · ⚪ covered by unit tests with the
+> **Legend:** ✅ exercised end-to-end on real hardware · ⚪ covered by unit tests with the
 > driver library mocked (real use needs real hardware).
 
 ---
@@ -146,10 +146,10 @@ USB0::0x0699::0x0527::C012345::INSTR  USB     TEKTRONIX     MSO44   C012345  1.2
   /dev/cu.usbserial-1420: USB-Serial CH340, VID:PID=1a86:7523 (no *IDN? reply)
 ```
 
-A device that is found but never answers is still listed — not everything on a
-serial bus speaks SCPI, and knowing it is there is more useful than hiding it.
-A sweep whose driver is not installed is reported with its install command
-rather than skipped silently.
+A device that is found but never answers is still listed. Not everything on a
+serial bus speaks SCPI, and knowing the port is there beats hiding it. If a
+sweep's driver is not installed, `scan` reports it with the install command
+instead of skipping silently.
 
 ### 2. Create a device config
 
@@ -196,7 +196,7 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 
 ### 4. Add to your MCP client
 
-**Claude Code** — add to `~/.claude.json` (global) or `.mcp.json` in your project root:
+**Claude Code**: add to `~/.claude.json` (global) or `.mcp.json` in your project root:
 
 ```json
 {
@@ -208,7 +208,7 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 }
 ```
 
-**Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Claude Desktop**: add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -273,17 +273,17 @@ export LABLINK_CONFIG_DIR=/path/to/devices/
 
 See [examples/configs/](examples/configs/) for complete templates.
 
-**VISA** — adds `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `document_ids`
+**VISA** adds `resource_string`, `manufacturer`, `model_number`, `read_termination`, `write_termination`, `document_ids`
 
-**SSH** — adds `host`, `port`, `username`, auth fields (`auth_type`, `auth_ssh_key_path`, `auth_token_env`, etc.)
+**SSH** adds `host`, `port`, `username`, auth fields (`auth_type`, `auth_ssh_key_path`, `auth_token_env`, etc.)
 
-**REST** — adds `base_url`, auth fields
+**REST** adds `base_url`, auth fields
 
-**Serial** — adds `serial_port`, `baud_rate`, `data_bits`, `parity`, `stop_bits`, `read_termination`, `write_termination`
+**Serial** adds `serial_port`, `baud_rate`, `data_bits`, `parity`, `stop_bits`, `read_termination`, `write_termination`
 
-**python_shell** — adds `python_path` (path to interpreter), `working_dir`
+**python_shell** adds `python_path` (path to interpreter), `working_dir`
 
-Credentials are always referenced by environment variable name — never stored in config files directly.
+Credentials are always referenced by environment variable name, never stored in config files directly.
 
 ---
 
@@ -321,7 +321,7 @@ Per-protocol commands appear only when that driver's deps are installed.
 - Confirm the instrument is powered on and the cable is connected.
 - For USB instruments on macOS, check System Settings → Privacy & Security → USB.
 - For USB instruments on Windows, pyvisa-py requires `libusb`. Install via `pip install libusb-package`.
-- For GPIB instruments, pyvisa-py has limited GPIB support — consider NI-VISA.
+- For GPIB instruments, pyvisa-py has limited GPIB support; consider NI-VISA.
 
 **VISA timeout on connect or query**
 
@@ -332,7 +332,7 @@ Per-protocol commands appear only when that driver's deps are installed.
 
 ## VISA Backend
 
-LabLink uses **pyvisa-py** by default — a pure-Python implementation with no additional software required.
+LabLink uses **pyvisa-py** by default: a pure-Python implementation, so there is nothing else to install.
 
 To use NI-VISA instead (e.g. for GPIB or if you already have it installed):
 
@@ -356,7 +356,7 @@ document_ids = [1291, 1323]   # e.g. user manual, programming guide
 
 ## Control your home (Home Assistant)
 
-[Home Assistant](https://www.home-assistant.io/) is a local-first, open-source smart-home hub. It unifies thousands of devices across ecosystems — Apple Home, Alexa, Google, Zigbee, Z-Wave, Matter — behind one local REST API. That means LabLink's existing `rest` driver drives your **whole home** through a single alias; no extra driver to install.
+[Home Assistant](https://www.home-assistant.io/) is a local-first, open-source smart-home hub. It unifies thousands of devices across ecosystems — Apple Home, Alexa, Google, Zigbee, Z-Wave, Matter — behind one local REST API. LabLink's existing `rest` driver reaches all of it through a single alias, with no extra driver to install.
 
 Create a **Long-Lived Access Token** in Home Assistant (Profile → Security → Long-Lived Access Tokens), export it, and point a REST config at your hub:
 
@@ -412,10 +412,10 @@ are considered case-by-case as demand surfaces.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data models, driver
 contract, dispatch model, and a step-by-step guide to adding a new driver.
-Adding a driver requires no changes to `lablink/mcp_server.py` or `lablink/cli.py` — just a new
+Adding a driver requires no changes to `lablink/mcp_server.py` or `lablink/cli.py`, just a new
 `lablink/interfaces/<type>/` package and one line in each registry.
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -426,13 +426,13 @@ pip install -e ".[dev]"
 pytest tests/
 ```
 
-All tests mock hardware drivers — no real instruments required.
+All tests mock hardware drivers. No real instruments required.
 
 ---
 
 ## Mapping your system (optional)
 
-Create `~/.lablink/topology.toml` to give the agent a machine-readable map of how your bench is physically wired — which ports connect to which, what signals flow, and what safety limits apply.
+Create `~/.lablink/topology.toml` to give the agent a machine-readable map of how your bench is physically wired: which ports connect to which, what signals flow, and what safety limits apply.
 
 ```toml
 # ~/.lablink/topology.toml
