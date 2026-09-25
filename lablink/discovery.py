@@ -11,13 +11,17 @@ plus an install action item — the same contract ``diagnose()`` honors (§9).
 Probing is deliberately forgiving: a candidate that cannot be opened, or that
 never answers, is reported as found-but-unidentified instead of aborting the
 sweep.
+
+``write_configs()`` turns a sweep into device configs the user can connect to
+immediately. It never overwrites a file it did not write this run.
 """
 
 import os
 import re
+from pathlib import Path
 from typing import Any, Optional
 
-from lablink.base import DiscoveredDevice, ScanResult
+from lablink.base import ConfigWriteOutcome, DiscoveredDevice, ScanResult
 from lablink.event_logger import log_event
 
 # The single definition of the VISA resource-string -> interface mapping.
@@ -279,3 +283,150 @@ def scan(timeout_s: float = DEFAULT_PROBE_TIMEOUT_S) -> ScanResult:
         identified=sum(1 for d in devices if d.identified),
     )
     return ScanResult(devices=devices, action_items=action_items)
+
+
+# ---------------------------------------------------------------------------
+# Config writing (`lablink scan --write-configs`)
+# ---------------------------------------------------------------------------
+
+UNIDENTIFIED_SKIP_REASON = (
+    "found but not identified — nothing to write without a manufacturer and model"
+)
+
+# Same defaults `lablink-sim --write-configs` writes. timeout_ms has no default
+# on DriverConfig, so a generated config must carry it.
+_VISA_TIMEOUT_MS = 5000
+_SERIAL_TIMEOUT_MS = 2000
+
+_VISA_TEMPLATE = '''# {alias} — written by `lablink scan --write-configs`.
+# *IDN? -> {idn}
+# Only the keys this device reported are written. Everything else keeps its
+# default (read_termination, write_termination, document_ids, description);
+# see README.md and examples/configs/visa_scope.toml for the full schema.
+type            = "visa"
+alias           = "{alias}"
+resource_string = "{resource}"
+manufacturer    = "{manufacturer}"
+model_number    = "{model}"
+timeout_ms      = {timeout_ms}
+'''
+
+_SERIAL_TEMPLATE = '''# {alias} — written by `lablink scan --write-configs`.
+# *IDN? -> {idn}
+# The identity above came back at {baud} baud. Only the keys this device
+# reported are written; everything else keeps its default (baud_rate, data_bits,
+# parity, stop_bits, terminations) — see examples/configs/serial_device.toml.
+type        = "serial"
+alias       = "{alias}"
+serial_port = "{resource}"
+timeout_ms  = {timeout_ms}
+'''
+
+
+def _toml_escape(value: str) -> str:
+    """Escape `value` for a TOML basic string.
+
+    *IDN? text is whatever the device chose to send, so a stray quote, backslash
+    or newline in a manufacturer name must not produce a config file that will
+    not parse.
+    """
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+
+
+def _config_body(device: DiscoveredDevice, alias: str) -> str:
+    """Render the TOML config for one identified device.
+
+    The header comment is the point: the first config a user opens should
+    explain where it came from and that the unwritten keys have defaults.
+    ``scan`` only produces "visa" and "serial" candidates, so those are the two
+    layouts.
+    """
+    template, timeout_ms = (
+        (_SERIAL_TEMPLATE, _SERIAL_TIMEOUT_MS)
+        if device.driver_type == "serial"
+        else (_VISA_TEMPLATE, _VISA_TIMEOUT_MS)
+    )
+    return template.format(
+        alias=alias,
+        # The reply goes into a comment, so it must stay on one line.
+        idn=(device.idn or "").replace("\r", " ").replace("\n", " "),
+        resource=_toml_escape(device.resource),
+        manufacturer=_toml_escape(device.manufacturer or ""),
+        model=_toml_escape(device.model or ""),
+        timeout_ms=timeout_ms,
+        baud=_PROBE_BAUD,
+    )
+
+
+def _unique_alias(device: DiscoveredDevice, taken: set[str]) -> str:
+    """Return `device.suggested_alias`, disambiguated if `taken` already has it.
+
+    Two identical instruments on one bench suggest the same alias. The serial
+    number from ``*IDN?`` is the natural tiebreak; a device that reported none
+    falls back to a numeric suffix.
+    """
+    base = device.suggested_alias or ""
+    if base not in taken:
+        return base
+    serial_slug = _slug(device.serial_number or "")
+    if serial_slug and f"{base}_{serial_slug}" not in taken:
+        return f"{base}_{serial_slug}"
+    suffix = 2
+    while f"{base}_{suffix}" in taken:
+        suffix += 1
+    return f"{base}_{suffix}"
+
+
+def write_configs(
+    devices: list[DiscoveredDevice], target: Path, *, force: bool = False
+) -> list[ConfigWriteOutcome]:
+    """Write one device config per identified device into `target`.
+
+    Args:
+        devices: The devices from a :func:`scan`, in scan order.
+        target: Directory to write into. Created if it does not exist.
+        force: Overwrite a config file that is already there.
+
+    Returns:
+        One :class:`ConfigWriteOutcome` per device, in the order given. A
+        device that never identified, and a device whose file already exists
+        without `force`, are both returned as skips with a reason rather than
+        dropped.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    outcomes: list[ConfigWriteOutcome] = []
+    taken: set[str] = set()
+
+    for device in devices:
+        if not device.identified or not device.suggested_alias:
+            outcomes.append(
+                ConfigWriteOutcome(
+                    resource=device.resource, reason=UNIDENTIFIED_SKIP_REASON
+                )
+            )
+            continue
+
+        alias = _unique_alias(device, taken)
+        taken.add(alias)
+        path = target / f"{alias}.toml"
+        if path.exists() and not force:
+            outcomes.append(
+                ConfigWriteOutcome(
+                    resource=device.resource,
+                    alias=alias,
+                    reason=f"{path} already exists (pass --force to overwrite)",
+                )
+            )
+            continue
+
+        path.write_text(_config_body(device, alias))
+        outcomes.append(
+            ConfigWriteOutcome(resource=device.resource, alias=alias, path=path)
+        )
+
+    return outcomes

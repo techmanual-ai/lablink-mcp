@@ -151,9 +151,35 @@ serial bus speaks SCPI, and knowing the port is there beats hiding it. If a
 sweep's driver is not installed, `scan` reports it with the install command
 instead of skipping silently.
 
-### 2. Create a device config
+### 2. Write the configs
 
-One TOML file per device at `~/.lablink/devices/<alias>.toml`. The `type` field selects the driver.
+```bash
+lablink scan --write-configs
+lablink connect tektronix_mso44
+```
+
+`--write-configs` turns the scan into one `<alias>.toml` per identified device
+in `~/.lablink/devices` (pass a directory to write somewhere else), then prints
+the path of each file and the `connect` command for it:
+
+```
+Wrote /home/you/.lablink/devices/tektronix_mso44.toml
+Skipped /dev/cu.usbserial-1420: found but not identified — nothing to write without a manufacturer and model
+
+Connect to one:
+  lablink connect tektronix_mso44
+```
+
+A file that already exists is skipped, never overwritten — pass `--force` when
+you mean to replace it. Two instruments of the same model get their serial
+number appended to the second alias. A device that did not answer `*IDN?` is
+reported as skipped, because a config full of blanks is worse than no config.
+
+### 3. Or write a device config by hand
+
+One TOML file per device at `~/.lablink/devices/<alias>.toml`. The `type` field
+selects the driver. Anything `scan` cannot enumerate, like an SSH host or a raw
+TCP socket instrument, is configured this way.
 
 **VISA instrument:**
 
@@ -168,7 +194,8 @@ timeout_ms  = 5000
 description = "4-channel mixed signal oscilloscope"
 ```
 
-`resource_string` and the alias both come straight from `lablink scan`.
+`resource_string` and the alias both come straight from `lablink scan` — this
+is the file `--write-configs` writes for you.
 
 **SSH host:**
 
@@ -186,7 +213,7 @@ timeout_ms  = 10000
 
 See [examples/configs/](examples/configs/) for templates for all drivers.
 
-### 3. Verify with the CLI
+### 4. Verify with the CLI
 
 ```bash
 lablink list                              # show all configured devices
@@ -194,7 +221,7 @@ lablink connect tek_mso44                 # open session, print identity
 lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 ```
 
-### 4. Add to your MCP client
+### 5. Add to your MCP client
 
 **Claude Code**: add to `~/.claude.json` (global) or `.mcp.json` in your project root:
 
@@ -293,6 +320,7 @@ The CLI mirrors the MCP tool surface for development and debugging.
 
 ```bash
 lablink scan                                    # discover attached devices, identify with *IDN?
+lablink scan --write-configs                    # ...and write a config per identified device
 lablink list                                    # list all configured devices
 lablink diagnose                                # system dep check (all drivers)
 lablink diagnose tek_mso44                      # device-specific reachability check

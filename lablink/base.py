@@ -13,6 +13,7 @@ mixin contributes a defaulted one.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from queue import Queue
 from threading import Thread
 from typing import Any, ClassVar, Generic, Optional, TypeVar
@@ -277,6 +278,22 @@ class ScanResult:
 
     devices: list[DiscoveredDevice] = field(default_factory=list)
     action_items: list[str] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class ConfigWriteOutcome:
+    """What ``lablink scan --write-configs`` did with one discovered device.
+
+    ``path`` is set when a config file was written and is None otherwise;
+    ``reason`` carries the explanation for every skip. A skip is a normal
+    result, not an error: an unidentified device has nothing to write, and an
+    existing file is never overwritten without ``--force``.
+    """
+
+    resource: str
+    alias: Optional[str] = None
+    path: Optional[Path] = None
+    reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

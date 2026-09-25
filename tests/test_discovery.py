@@ -335,3 +335,220 @@ class TestScanCommand:
         )
 
         assert "pip install lablink-mcp[visa]" in invoked.output
+
+
+# ---------------------------------------------------------------------------
+# Config writing (`lablink scan --write-configs`)
+# ---------------------------------------------------------------------------
+
+
+def _found(alias="tektronix_mso44", resource=_SCOPE_RESOURCE, serial_number="C012345",
+           driver_type="visa", manufacturer="TEKTRONIX", model="MSO44"):
+    """Build an identified DiscoveredDevice as a sweep would have returned it."""
+    from lablink.base import DiscoveredDevice
+
+    return DiscoveredDevice(
+        resource=resource,
+        driver_type=driver_type,
+        interface_type="USB" if driver_type == "visa" else "serial",
+        identified=True,
+        idn=f"{manufacturer},{model},{serial_number},1.2.3",
+        manufacturer=manufacturer,
+        model=model,
+        serial_number=serial_number,
+        suggested_alias=alias,
+    )
+
+
+class TestWriteConfigs:
+    def test_writes_one_config_per_identified_device(self, tmp_path):
+        outcomes = discovery.write_configs([_found()], tmp_path)
+
+        assert [o.alias for o in outcomes] == ["tektronix_mso44"]
+        path = tmp_path / "tektronix_mso44.toml"
+        assert outcomes[0].path == path
+        body = path.read_text()
+        assert 'type            = "visa"' in body
+        assert f'resource_string = "{_SCOPE_RESOURCE}"' in body
+        assert 'manufacturer    = "TEKTRONIX"' in body
+        assert 'model_number    = "MSO44"' in body
+        # The header teaches the schema rather than dumping every default.
+        assert body.startswith("# tektronix_mso44 — written by `lablink scan --write-configs`.")
+        assert "*IDN? ->" in body
+        keys = [
+            line.split("=")[0].strip()
+            for line in body.splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        assert keys == [
+            "type", "alias", "resource_string", "manufacturer", "model_number", "timeout_ms",
+        ]
+
+    def test_written_config_round_trips_through_load_config(self, tmp_path, monkeypatch):
+        from lablink.config import load_config
+        from lablink.interfaces.visa.config import VisaDriverConfig
+
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
+        discovery.write_configs([_found()], tmp_path)
+
+        config = load_config("tektronix_mso44")
+
+        assert isinstance(config, VisaDriverConfig)
+        assert config.alias == "tektronix_mso44"
+        assert config.type == "visa"
+        assert config.resource_string == _SCOPE_RESOURCE
+        assert config.manufacturer == "TEKTRONIX"
+        assert config.model_number == "MSO44"
+        assert config.timeout_ms > 0
+        assert config.read_termination == "\n"
+
+    def test_written_serial_config_round_trips(self, tmp_path, monkeypatch):
+        from lablink.config import load_config
+        from lablink.interfaces.serial.config import SerialDriverConfig
+
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
+        device = _found(alias="lablink_fg_100", resource="/dev/ttyUSB0",
+                        driver_type="serial", manufacturer="LabLink", model="FG-100")
+        discovery.write_configs([device], tmp_path)
+
+        config = load_config("lablink_fg_100")
+
+        assert isinstance(config, SerialDriverConfig)
+        assert config.serial_port == "/dev/ttyUSB0"
+        assert config.baud_rate == 115200
+
+    def test_quotes_in_idn_fields_do_not_break_the_toml(self, tmp_path, monkeypatch):
+        from lablink.config import load_config
+
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
+        discovery.write_configs([_found(manufacturer='ACME "Labs"')], tmp_path)
+
+        assert load_config("tektronix_mso44").manufacturer == 'ACME "Labs"'
+
+    def test_existing_file_is_skipped_not_overwritten(self, tmp_path):
+        path = tmp_path / "tektronix_mso44.toml"
+        path.write_text("# hand-edited\n")
+
+        outcomes = discovery.write_configs([_found()], tmp_path)
+
+        assert outcomes[0].path is None
+        assert "already exists" in outcomes[0].reason
+        assert "--force" in outcomes[0].reason
+        assert path.read_text() == "# hand-edited\n"
+
+    def test_force_overwrites(self, tmp_path):
+        path = tmp_path / "tektronix_mso44.toml"
+        path.write_text("# hand-edited\n")
+
+        outcomes = discovery.write_configs([_found()], tmp_path, force=True)
+
+        assert outcomes[0].path == path
+        assert "hand-edited" not in path.read_text()
+
+    def test_duplicate_alias_is_disambiguated_by_serial_number(self, tmp_path):
+        devices = [
+            _found(resource="USB0::0x0699::0x0527::C012345::INSTR", serial_number="C012345"),
+            _found(resource="USB0::0x0699::0x0527::C099999::INSTR", serial_number="C099999"),
+        ]
+
+        outcomes = discovery.write_configs(devices, tmp_path)
+
+        assert [o.alias for o in outcomes] == ["tektronix_mso44", "tektronix_mso44_c099999"]
+        assert (tmp_path / "tektronix_mso44_c099999.toml").exists()
+
+    def test_duplicate_alias_without_serial_falls_back_to_a_number(self, tmp_path):
+        devices = [
+            _found(resource="GPIB0::7::INSTR", serial_number=""),
+            _found(resource="GPIB0::8::INSTR", serial_number=""),
+            _found(resource="GPIB0::9::INSTR", serial_number=""),
+        ]
+
+        outcomes = discovery.write_configs(devices, tmp_path)
+
+        assert [o.alias for o in outcomes] == [
+            "tektronix_mso44", "tektronix_mso44_2", "tektronix_mso44_3",
+        ]
+
+    def test_unidentified_device_is_skipped_with_a_reason(self, tmp_path):
+        from lablink.base import DiscoveredDevice
+
+        silent = DiscoveredDevice(
+            resource="/dev/ttyUSB0",
+            driver_type="serial",
+            interface_type="serial",
+            detail="USB-Serial CH340 (no *IDN? reply)",
+        )
+
+        outcomes = discovery.write_configs([silent, _found()], tmp_path)
+
+        assert outcomes[0].path is None
+        assert outcomes[0].alias is None
+        assert "not identified" in outcomes[0].reason
+        assert list(tmp_path.glob("*.toml")) == [tmp_path / "tektronix_mso44.toml"]
+
+
+class TestScanWriteConfigsCommand:
+    def _run(self, monkeypatch, devices, args):
+        from lablink.base import ScanResult
+
+        monkeypatch.setattr(discovery, "scan", lambda *a, **kw: ScanResult(devices=devices))
+        return CliRunner().invoke(cli_module.cli, ["scan", *args])
+
+    def test_default_target_is_the_configured_config_dir(self, monkeypatch, tmp_path):
+        from pathlib import Path
+
+        from lablink.config import get_config_dir
+
+        devices_dir = tmp_path / "devices"
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(devices_dir))
+        assert get_config_dir() == devices_dir
+
+        invoked = self._run(monkeypatch, [_found()], ["--write-configs"])
+
+        assert invoked.exit_code == 0
+        assert (devices_dir / "tektronix_mso44.toml").exists()
+        # A test that wrote to the developer's real config dir would be a bug.
+        assert not (Path.home() / ".lablink" / "devices" / "tektronix_mso44.toml").exists()
+
+    def test_explicit_directory_overrides_the_default(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path / "unused"))
+
+        invoked = self._run(monkeypatch, [_found()], ["--write-configs", str(tmp_path / "here")])
+
+        assert (tmp_path / "here" / "tektronix_mso44.toml").exists()
+        assert not (tmp_path / "unused").exists()
+        assert f"Wrote {tmp_path / 'here' / 'tektronix_mso44.toml'}" in invoked.output
+
+    def test_prints_the_next_command_to_run(self, monkeypatch, tmp_path):
+        invoked = self._run(monkeypatch, [_found()], ["--write-configs", str(tmp_path)])
+
+        assert "lablink connect tektronix_mso44" in invoked.output
+
+    def test_skips_are_reported_with_their_reason(self, monkeypatch, tmp_path):
+        (tmp_path / "tektronix_mso44.toml").write_text("# hand-edited\n")
+
+        invoked = self._run(monkeypatch, [_found()], ["--write-configs", str(tmp_path)])
+
+        assert "already exists" in invoked.output
+        assert "No configs written." in invoked.output
+        assert (tmp_path / "tektronix_mso44.toml").read_text() == "# hand-edited\n"
+
+    def test_force_flag_overwrites(self, monkeypatch, tmp_path):
+        (tmp_path / "tektronix_mso44.toml").write_text("# hand-edited\n")
+
+        invoked = self._run(
+            monkeypatch, [_found()], ["--write-configs", str(tmp_path), "--force"]
+        )
+
+        assert "Wrote" in invoked.output
+        assert "hand-edited" not in (tmp_path / "tektronix_mso44.toml").read_text()
+
+    def test_without_the_flag_nothing_is_written_and_the_flag_is_suggested(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setenv("LABLINK_CONFIG_DIR", str(tmp_path))
+
+        invoked = self._run(monkeypatch, [_found()], [])
+
+        assert list(tmp_path.glob("*.toml")) == []
+        assert "lablink scan --write-configs" in invoked.output
