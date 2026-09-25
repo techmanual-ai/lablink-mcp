@@ -22,10 +22,12 @@ Usage:
 
 import json
 import sys
+from pathlib import Path
 
 import click
 
 from lablink import discovery
+from lablink.base import ConfigWriteOutcome
 from lablink.config import get_config_dir
 from lablink.interfaces import DRIVER_REGISTRY
 
@@ -150,16 +152,51 @@ def _echo_table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> None:
         click.echo("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(line)).rstrip())
 
 
+def _echo_write_outcomes(outcomes: list[ConfigWriteOutcome]) -> None:
+    """Report what --write-configs did, then the command to run next.
+
+    Written paths go to stdout — they are the command's product. Skips and the
+    follow-up command go to stderr with the rest of the status output.
+    """
+    for outcome in outcomes:
+        if outcome.path is not None:
+            click.echo(f"Wrote {outcome.path}")
+        else:
+            click.echo(f"Skipped {outcome.resource}: {outcome.reason}", err=True)
+
+    written = [o for o in outcomes if o.path is not None]
+    if not written:
+        click.echo("\nNo configs written.", err=True)
+        return
+    click.echo("\nConnect to one:", err=True)
+    for outcome in written:
+        click.echo(f"  lablink connect {outcome.alias}", err=True)
+
+
 @cli.command(name="scan")
-def scan_cmd() -> None:
+@click.option(
+    "--write-configs",
+    "config_dir",
+    is_flag=False,
+    flag_value="",
+    default=None,
+    metavar="[DIR]",
+    help="Write a device config per identified device into DIR "
+    "(default: the configured device directory).",
+)
+@click.option("--force", is_flag=True, help="Overwrite config files that already exist.")
+def scan_cmd(config_dir: str | None, force: bool) -> None:
     """Discover attached devices and identify them with *IDN?.
 
     Enumerates VISA resources and serial ports, asks each candidate for its
     identity, and prints one row per device with a suggested alias. A device
     that does not answer is still listed — as found, not identified.
 
-    The table goes to stdout; counts, install steps, and per-device detail go
-    to stderr.
+    With --write-configs, every identified device also gets a ready-to-use
+    <alias>.toml. An existing file is skipped unless --force is passed.
+
+    The table and the paths written go to stdout; counts, install steps,
+    per-device detail, and skips go to stderr.
     """
     click.echo("Scanning VISA resources and serial ports...", err=True)
     result = discovery.scan()
@@ -182,11 +219,18 @@ def scan_cmd() -> None:
     for device in result.devices:
         if device.detail:
             click.echo(f"  {device.resource}: {device.detail}", err=True)
-    click.echo(
-        f"\nTo use one, write {get_config_dir()}/<alias>.toml with "
-        'type = "<driver>" and the resource above.',
-        err=True,
-    )
+    if config_dir is None:
+        click.echo(
+            f"\nTo write these as device configs in {get_config_dir()}:", err=True
+        )
+        click.echo("  lablink scan --write-configs", err=True)
+        return
+
+    # Empty string means the flag was passed without a directory. The default
+    # is resolved here, not at import time, so LABLINK_CONFIG_DIR is honored.
+    target = get_config_dir() if config_dir == "" else Path(config_dir).expanduser()
+    click.echo("")
+    _echo_write_outcomes(discovery.write_configs(result.devices, target, force=force))
 
 
 # --- Topology subgroup (shared; always registered) -------------------------

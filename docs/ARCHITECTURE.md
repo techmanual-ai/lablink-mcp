@@ -80,7 +80,8 @@ lablink-mcp/
 │   ├── base.py                     # data models, config dataclasses, Session, the driver ABC
 │   ├── config.py                   # TOML loader via DRIVER_CONFIG_REGISTRY; device-memory reader; load_system()
 │   ├── system.py                   # topology graph logic: device_slice(), validate_system()
-│   ├── discovery.py                # bus sweep behind `lablink scan`: scan(), parse_idn()
+│   ├── discovery.py                # bus sweep behind `lablink scan`: scan(), parse_idn(),
+│   │                               #   write_configs()
 │   ├── session.py                  # _sessions registry; three-state lookup
 │   ├── event_logger.py             # JSONL event log
 │   ├── exceptions.py               # ConfigError, SessionError, DriverError
@@ -672,12 +673,14 @@ Discovery crosses two drivers (`visa`, `serial`), so it is a **shared
 subsystem**, not a driver method — the same split the topology subsystem uses
 (§15.1):
 
-- **Data models → `lablink/base.py`** — `DiscoveredDevice`, `ScanResult`.
-- **Sweep logic → `lablink/discovery.py`** — `scan()`, plus the pure helpers
-  `parse_idn()` and `suggest_alias()`.
+- **Data models → `lablink/base.py`** — `DiscoveredDevice`, `ScanResult`,
+  `ConfigWriteOutcome`.
+- **Sweep logic → `lablink/discovery.py`** — `scan()` and `write_configs()`,
+  plus the pure helpers `parse_idn()` and `suggest_alias()`.
 - **Rendering → `lablink/cli.py`** — the `scan` command is a shared lifecycle
-  command alongside `diagnose` and `list`; it only formats the table. Keeping
-  the logic in the module means tests reach it without click.
+  command alongside `diagnose` and `list`; it only formats the table and the
+  write report. Keeping the logic in the module means tests reach it without
+  click.
 
 `scan` is CLI-only for now: it is a setup step the human (or an agent with a
 shell) runs before any alias exists, and every MCP tool is alias-addressed.
@@ -711,3 +714,28 @@ steps and the empty-scan explanation, never a traceback.
 A VISA resource string that is not enumerable (a raw TCP `SOCKET` resource, a
 pty) cannot be discovered by either sweep — only probed once known. That is a
 property of the buses, not of `scan`.
+
+### 17.4 Writing configs (`--write-configs`)
+
+`write_configs(devices, target, force=False)` closes the loop between a scan
+and a working session: one `<alias>.toml` per identified device, in the
+directory `get_config_dir()` resolves (never a hardcoded path, so
+`LABLINK_CONFIG_DIR` is honored). It returns one `ConfigWriteOutcome` per
+device in scan order — a skip is reported, never dropped.
+
+1. **Only identified devices are written.** A candidate that never answered
+   `*IDN?` has no manufacturer, no model and no alias to name the file after. A
+   config full of blanks is worse than no config, so it comes back as a skip
+   with its reason.
+2. **Nothing is overwritten silently.** An existing path is a skip naming
+   `--force`. The user may have hand-edited that file.
+3. **Alias collisions are broken by serial number.** Two identical instruments
+   suggest one alias; the second takes `<alias>_<serial>`, or `<alias>_2` when
+   the device reported no serial number. Collisions are resolved against the
+   aliases assigned in this run, not against the directory — a name already on
+   disk is rule 2's skip, not a rename.
+4. **The generated file is a teaching example.** A header comment names the
+   command that wrote it and the raw `*IDN?` reply, then only the keys the
+   device actually reported plus the required `timeout_ms`. Optional keys are
+   left out so the first config a user opens is short enough to read. The
+   layout matches what `lablink-sim --write-configs` writes (§16).

@@ -19,6 +19,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pyvisa; ..."` one-liner the README used to hand out for finding a resource
   string.
 
+- **`lablink scan --write-configs [DIR]`** — the scan now writes the configs it
+  found. One `<alias>.toml` per identified device, in `~/.lablink/devices` by
+  default (or `DIR`), each with a header comment naming the `*IDN?` reply it
+  came from and only the keys the device reported. The command then prints the
+  path of every file and the `lablink connect <alias>` to run next, so a fresh
+  install reaches a live instrument in two commands. An existing file is
+  skipped rather than overwritten unless `--force` is passed; two instruments
+  of the same model are disambiguated by serial number, or by a numeric suffix
+  when they report none. A device that was found but never identified is
+  reported as skipped — there is not enough information to write a config worth
+  having.
+
 ### Changed
 
 - **`techmanual_document_ids` is now `document_ids`.** The field is no longer
