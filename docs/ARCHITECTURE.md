@@ -10,8 +10,8 @@ For installation and usage, see the [README](../README.md).
 LabLink is a local-first Python application. It exposes two interfaces over one
 shared core:
 
-- **An MCP server** (primary) — for AI agents, over FastMCP's stdio transport.
-- **A CLI** (secondary) — for development, debugging, and scripted use.
+- **An MCP server** (primary) for AI agents, over FastMCP's stdio transport.
+- **A CLI** (secondary) for development, debugging, and scripted use.
 
 Both interfaces dispatch through the same driver registry, so a device behaves
 identically whether you reach it from an agent or the command line.
@@ -27,8 +27,8 @@ identically whether you reach it from an agent or the command line.
 | Packaging | `uv` + `hatchling`, optional extras per driver |
 
 Driver libraries (PyVISA, Paramiko, httpx, pyserial) are **optional extras** and
-are **imported lazily** — the server starts and runs with zero drivers
-installed, and only the drivers whose dependencies are present expose tools.
+are **imported lazily**. The server starts and runs with zero drivers
+installed. Only the drivers whose dependencies are present expose tools.
 
 ---
 
@@ -38,17 +38,16 @@ installed, and only the drivers whose dependencies are present expose tools.
   lifecycle tools (`connect`, `disconnect`, `list_devices`, `diagnose`). Each
   driver then registers its own operation tools (`visa_query`, `ssh_exec`,
   `rest_get`, …). There is deliberately no universal `query`/`write`/`read`
-  tool — a uniform surface leaks across protocols (the same `data` argument
-  meaning a URL path, a SCPI string, or raw bytes depending on the driver).
-  Honest, per-protocol names beat one overloaded surface.
+  tool. A uniform surface leaks across protocols: the same `data` argument
+  would mean a URL path, a SCPI string, or raw bytes depending on the driver.
 
 - **Tools appear only when they can work.** A driver whose Python dependency is
   not installed does not register its tools. The agent never sees a tool that
   would fail with "missing dependency."
 
-- **Diagnose, don't fail silently.** `diagnose()` is the agent's oracle. When a
-  dependency is missing, an instrument is unreachable, or a config field is
-  wrong, `diagnose()` reports what is broken and what to do about it.
+- **Diagnose, don't fail silently.** When a dependency is missing, an
+  instrument is unreachable, or a config field is wrong, `diagnose()` reports
+  what is broken and what to do about it.
 
 - **Config selects the driver.** Every device config carries a `type` field that
   maps to a driver in `DRIVER_REGISTRY`. No protocol-conditional logic exists
@@ -120,47 +119,48 @@ registries.
 
 ## 4. Core Components
 
-**`lablink/base.py`** — all type definitions and the driver ABC:
+**`lablink/base.py`** holds all type definitions and the driver ABC:
 - Data models: `Result`, `ReadResult`, `ConnectResult`, `DiagnosticResult`,
   `SystemDepStatus` (§5).
 - Config types: `DriverConfig` (base) plus the `AuthConfig` and
   `DocumentedConfig` mixins (§7).
-- `Session[ConfigT]` — a live connection, generic over the driver's config type.
-- `LabLinkDriver[ConfigT]` — the driver ABC (§6).
+- `Session[ConfigT]`: a live connection, generic over the driver's config type.
+- `LabLinkDriver[ConfigT]`: the driver ABC (§6).
 
-**`lablink/config.py`** — reads `~/.lablink/devices/<alias>.toml` (or
+**`lablink/config.py`** reads `~/.lablink/devices/<alias>.toml` (or
 `$LABLINK_CONFIG_DIR/<alias>.toml`), looks up `DRIVER_CONFIG_REGISTRY[type]`, and
 instantiates the matching config subclass. Raises `ConfigError` on an unknown
 `type` with a message listing valid types. Expands `~` on every path field at
 load time (TOML does not). `load_device_memory(alias)` is the single reader of
 `<alias>.md` (§8.3).
 
-**`lablink/session.py`** — module-level `_sessions: dict[str, Session]` with
-`register` / `deregister` / `get` / three-state `lookup` (§8).
+**`lablink/session.py`** holds a module-level `_sessions: dict[str, Session]`
+with `register` / `deregister` / `get` / three-state `lookup` (§8).
 
-**`lablink/interfaces/<type>/`** — one subpackage per driver: `driver.py`
+**`lablink/interfaces/<type>/`** has one subpackage per driver: `driver.py`
 (subclass of `LabLinkDriver`) and `config.py` (subclass of `DriverConfig`).
 
-**`lablink/mcp_server.py`** — FastMCP entrypoint. Registers the four shared lifecycle
-tools, then for each driver whose deps are present, instantiates it and calls
-`register_tools(mcp)`. Holds driver instances as server-lifetime singletons.
+**`lablink/mcp_server.py`** is the FastMCP entrypoint. It registers the four
+shared lifecycle tools, then for each driver whose deps are present,
+instantiates it and calls `register_tools(mcp)`. Holds driver instances as
+server-lifetime singletons.
 
-**`lablink/cli.py`** — Click root group. Shared subcommands always present; per-driver
-subgroups (`lablink visa …`) registered via `register_cli_commands(group)` with
-the same dep gating as the MCP server.
+**`lablink/cli.py`** is the Click root group. Shared subcommands are always
+present; per-driver subgroups (`lablink visa …`) are registered via
+`register_cli_commands(group)` with the same dep gating as the MCP server.
 
-**`lablink/discovery.py`** — the bus sweep behind `lablink scan` (§17).
+**`lablink/discovery.py`** is the bus sweep behind `lablink scan` (§17).
 `scan()` enumerates VISA resources and serial ports, probes each with `*IDN?`,
 and returns a `ScanResult`. Depends on `base`, `event_logger` and the VISA
 driver's interface-type helper; its third-party imports are lazy.
 
-**`lablink/event_logger.py`** — appends one JSONL entry per tool call to
+**`lablink/event_logger.py`** appends one JSONL entry per tool call to
 `~/.lablink/logs/YYYY-MM-DD.jsonl`. Never raises (§8.4).
 
-**`lablink/redaction.py`** — shared credential scrubber. `secret_values(config)`
-resolves a config's `auth_*_env` fields to their live `os.environ` values (values
-below a short-secret floor are excluded — see §8.4); `redact(text, secrets)`
-replaces any occurrence with `***`; `contains_secret(text, secrets)` is the cheap
+**`lablink/redaction.py`** is the shared credential scrubber.
+`secret_values(config)` resolves a config's `auth_*_env` fields to their live
+`os.environ` values (values below a short-secret floor are excluded; see §8.4);
+`redact(text, secrets)` replaces any occurrence with `***`; `contains_secret(text, secrets)` is the cheap
 detector for the agent-facing warning. The scrub itself runs at the logging
 boundary (`event_logger.log_event`, §8.4), not at each call site. Stdlib-only;
 depends on nothing else in `lablink`.
@@ -173,13 +173,13 @@ All tool return values are one of three result types, serialized to a dict for
 MCP transport. They carry orthogonal information, so a single optional-field
 type was rejected in favor of three with clear contracts.
 
-- **`ConnectResult`** — identity, device memory, and documentation pointers.
-  Populated once per session by `connect()`.
-- **`ReadResult`** — `raw` / `decoded` / `format` / `timed_out` plus
-  `metadata`. The right shape for anything that returns data: queries, reads,
-  exec stdout, REST bodies. Write-style tools also use it when they carry useful
-  metadata (exit code, status code, bytes written).
-- **`Result`** — bare success/failure for tools with no payload (`disconnect`,
+- **`ConnectResult`** carries identity, device memory, and documentation
+  pointers. `connect()` populates it once per session.
+- **`ReadResult`** carries `raw` / `decoded` / `format` / `timed_out` plus
+  `metadata`. Anything that returns data uses it: queries, reads, exec stdout,
+  REST bodies. Write-style tools also use it when they carry useful metadata
+  (exit code, status code, bytes written).
+- **`Result`** is bare success/failure for tools with no payload (`disconnect`,
   `serial_flush`).
 
 `DiagnosticResult` and `SystemDepStatus` carry diagnose output.
@@ -191,7 +191,7 @@ type was rejected in favor of three with clear contracts.
 multiple-inheritance bases is MRO-sensitive: as soon as a subclass adds a
 required field after a mixin contributes a defaulted one, construction fails with
 `TypeError: non-default argument follows default argument`. With `kw_only=True`,
-all fields are keyword-only and ordering is irrelevant — required and defaulted
+all fields are keyword-only and ordering is irrelevant: required and defaulted
 fields interleave freely across the MRO. This applies to the result types and
 `Session` as well; do not omit it even on a class that "works today."
 
@@ -241,8 +241,8 @@ DRIVER_CONFIG_REGISTRY: dict[str, type[DriverConfig]]   # type -> config class
 
 An import-time check raises `RuntimeError` if their key sets ever diverge (it
 uses `if/raise`, not `assert`, so `python -O` cannot strip it). Adding a driver
-is one line in each registry — no changes to `config.py`, `lablink/mcp_server.py`, or
-`lablink/cli.py`.
+is one line in each registry. `config.py`, `lablink/mcp_server.py` and
+`lablink/cli.py` do not change.
 
 ### 6.2 Instance lifecycle and state placement
 
@@ -287,18 +287,17 @@ auth_ssh_key_path       = "~/.ssh/id_rsa"
 auth_ssh_passphrase_env = "SSH_PASSPHRASE"
 ```
 
-VISA, serial, and python_shell configs do **not** inherit `AuthConfig` — those
+VISA, serial, and python_shell configs do **not** inherit `AuthConfig`. Those
 fields would be noise on them.
 
 ### 7.3 Documented mixin (devices with manuals — VISA)
 
-`DocumentedConfig` adds `document_ids: list[int]` — opaque pointers into
+`DocumentedConfig` adds `document_ids: list[int]`, opaque pointers into
 whatever documentation index the agent can reach. LabLink never resolves them;
 it returns them on `connect()` so the agent can fetch the right pages instead
-of relying on training data. Drivers that target generic
-compute (SSH, REST, python_shell) do not inherit it by default; it can be added
-to any config later without migration impact, since an empty list means "no
-manuals."
+of relying on training data. Drivers that target generic compute (SSH, REST,
+python_shell) do not inherit it by default. It can be added to any config later
+without migration impact, since an empty list means "no manuals."
 
 ### 7.4 Per-driver fields
 
@@ -330,8 +329,8 @@ See [examples/configs/](../examples/configs/) for a complete template per driver
 
 `session.py` keeps `_sessions: dict[str, Session]` and exposes a three-state
 lookup that distinguishes "no session" from "wrong type," so error messages and
-recovery hints can be specific (a wrong-type result means the alias is in use by
-a different driver — calling `connect()` would clobber it):
+recovery hints can be specific. A wrong-type result means a different driver
+holds the alias, and calling `connect()` would clobber it.
 
 ```python
 def lookup(alias, expected_type) -> SessionLookup   # found / wrong_type / session
@@ -340,14 +339,14 @@ def get(alias, expected_type) -> Session | None      # Session iff found and typ
 
 ### 8.1 Shared lifecycle flow
 
-- **`connect(alias)`** — load config → `DRIVER_REGISTRY[type]` → if the driver's
+- **`connect(alias)`**: load config → `DRIVER_REGISTRY[type]` → if the driver's
   deps are missing, return an install hint → `driver.connect(config)` → inject
   device memory → return `ConnectResult`.
-- **`disconnect(alias)`** — look up the session → `driver.disconnect(session)` →
+- **`disconnect(alias)`**: look up the session → `driver.disconnect(session)` →
   **always** deregister the alias afterward.
-- **`diagnose(alias?)`** — with an alias, dispatch to `driver.diagnose(config)`;
+- **`diagnose(alias?)`**: with an alias, dispatch to `driver.diagnose(config)`;
   without one, run the system audit (§9).
-- **`list_devices()`** — scan the config dir and return a list of dicts with
+- **`list_devices()`**: scan the config dir and return a list of dicts with
   `status` in `{"connected", "configured", "invalid"}`. `"configured"` means the
   TOML parsed — **not** that the device is reachable. Use `diagnose(alias)` or
   `connect(alias)` to check reachability.
@@ -364,7 +363,7 @@ Each registered tool follows the same shape:
 **Per-call timeout invariant.** For drivers like VISA where the library exposes
 timeout as a resource attribute (not a per-call kwarg), every tool must reset
 `session.raw.timeout = timeout_ms or session.config.timeout_ms` at the top of the
-call. Never assume the previous call left it in any state — otherwise a long
+call. Never assume the previous call left it in any state. Otherwise a long
 debug query bleeds its timeout into later fast queries. Drivers whose library
 takes a per-call timeout (httpx, paramiko `exec_command`) use that instead and
 do not mutate session state.
@@ -380,7 +379,7 @@ uniform in one place.
 
 ### 8.4 Event logger contract
 
-`log_event(**fields)` appends one JSONL entry per call. It **never raises** —
+`log_event(**fields)` appends one JSONL entry per call. It **never raises**:
 filesystem errors are swallowed so logging cannot affect tool behavior.
 `LABLINK_LOG_DIR` is read on every call (so tests can redirect or disable it);
 set it to `""` to disable logging.
@@ -397,19 +396,19 @@ query path or echoed error). Redaction happens **at the logging boundary**: a
 driver passes the secrets in scope for the call via `log_event(..., secrets=...)`
 (from `redaction.secret_values(config)`), and `log_event` scrubs every free-form
 string field — `error` and each string-valued extra — to `***` before
-serialization. Centralizing it at the single write point means a driver cannot
-leak a known credential by forgetting to wrap an individual field; the canonical
-`op`/`alias` fields are structural and never scrubbed. The result returned to the
-agent is left intact (the agent already holds the secret); only the durable log
-is scrubbed. The SSH tools additionally set `metadata.security_warning` (via
+serialization. With one write point, a driver cannot leak a known credential by
+forgetting to wrap an individual field. The canonical `op`/`alias` fields are
+structural and never scrubbed. The result returned to the agent is left intact
+(the agent already holds the secret); only the durable log is scrubbed. The SSH
+tools additionally set `metadata.security_warning` (via
 `redaction.contains_secret`) when a known credential is detected inline.
 
-Two limitations are accepted by design, not silently relied upon:
+Two limitations are accepted by design:
 
 - **Known secrets only.** Only values held in the config's `auth_*_env` variables
   are in the secret set; a secret the agent invents from another source passes
   through. The agent-facing tool docstrings instruct agents never to inline
-  secrets — redaction is the safety net, not the front line.
+  secrets. Redaction is the safety net behind that instruction.
 - **Literal-value matching, with a short-secret floor.** A secret is matched as
   its raw `os.environ` value, so a transformed copy (percent-encoded in a query
   string, base64 in a Basic-auth header) will not match. Values shorter than
@@ -423,16 +422,16 @@ Two limitations are accepted by design, not silently relied upon:
 
 Dependencies fall into four layers:
 
-1. **Python runtime** — `uv` is the single user-facing prerequisite; it installs
+1. **Python runtime.** `uv` is the single user-facing prerequisite; it installs
    and manages Python itself.
-2. **Python packages** — optional extras per driver (`lablink-mcp[visa]`,
+2. **Python packages.** Optional extras per driver (`lablink-mcp[visa]`,
    `[ssh]`, `[rest]`, `[serial]`, `[all]`). All driver imports are lazy. A driver
    whose package is missing does not register its tools, and `connect()` for that
    type returns a structured error with the install command.
-3. **System packages** — some drivers need OS-level libraries pip cannot install
+3. **System packages.** Some drivers need OS-level libraries pip cannot install
    (e.g. `libusb` for VISA USB access). There is no programmatic install; the
    fix is surfacing them.
-4. **The user's own Python environment** — vendor SDKs (`nidaqmx`, `picosdk`, …)
+4. **The user's own Python environment.** Vendor SDKs (`nidaqmx`, `picosdk`, …)
    with no VISA or network interface. The `python_shell` driver bridges to these
    by spawning a subprocess in a user-supplied interpreter.
 
@@ -441,11 +440,11 @@ calls `check_python_deps()` (via `find_spec`, no side effects) and, where Python
 deps are present, `system_dep_check()`. It returns a `DiagnosticResult` whose
 `drivers` map gives each driver an exhaustive status
 (`ready` / `missing_python` / `missing_system`) and whose `action_items` list is
-ordered most-blocking first. There is no `"unknown"` state — an undeterminable
-status is a driver bug, not a silent third option.
+ordered most-blocking first. There is no `"unknown"` state. A status that cannot
+be determined is a driver bug.
 
 Installing a new extra does **not** retroactively add its tools to a running
-server — the tool surface is fixed at startup. Restart the server to pick up a
+server. The tool surface is fixed at startup. Restart the server to pick up a
 newly installed driver.
 
 ---
@@ -453,22 +452,21 @@ newly installed driver.
 ## 10. Concurrency Model (v1)
 
 FastMCP's stdio transport **serializes tool calls**: while one tool runs, every
-other waits, including tools targeting different aliases. The practical
-implications:
+other waits, including tools targeting different aliases.
 
 **Works today**
 - Many sessions open at once, each addressed by alias.
 - Fast interleaved request/response across devices (read A → compute → write B).
 
 **Does not work in v1**
-- Genuinely parallel tool execution.
-- Watching a long acquisition on A while configuring B — a 30-second sweep blocks
+- Parallel tool execution.
+- Watching a long acquisition on A while configuring B. A 30-second sweep blocks
   the whole server for 30 seconds.
 
 Mitigations: keep `timeout_ms` short per device, prefer status-poll over
 blocking-await for slow operations, and sequence long operations rather than
 expecting overlap. Lifting this constraint would require an async dispatch
-refactor or a different transport, deferred until real demand surfaces.
+refactor or a different transport. Both are deferred until real demand surfaces.
 
 ---
 
@@ -511,8 +509,8 @@ speaking newline-delimited JSON over stdin/stdout. The bootstrap REPL ships at
 "message", "traceback"}` when non-null. On start the bootstrap emits a `ready`
 handshake with the Python version and interpreter path.
 
-State persists across calls within a session — importing an SDK in one call and
-using it in the next is the whole point.
+State persists across calls within a session. Importing an SDK in one call and
+using it in the next is what the driver exists for.
 
 **Failure modes**, tracked via a per-session `busy` flag:
 
@@ -531,7 +529,7 @@ sets `truncated`. Continuous/streaming subprocess output is out of scope for
 
 > **Security note.** This driver executes arbitrary Python with the privileges of
 > the LabLink process. Anyone able to send it tool calls can run code. This is by
-> design — the operator has consented to giving their agent execution. Deployments
+> design: the operator has consented to giving their agent execution. Deployments
 > that do not want this should not install the `[python_shell]` extra; without it,
 > the driver never registers.
 
@@ -547,15 +545,15 @@ sets `truncated`. Continuous/streaming subprocess output is out of scope for
 3. Subclass `DriverConfig` (`@dataclass(kw_only=True)`). Inherit `AuthConfig` if
    it needs credentials; inherit `DocumentedConfig` only if it targets devices
    with manuals.
-4. Register it — one line in each of `DRIVER_REGISTRY` and
+4. Register it with one line in each of `DRIVER_REGISTRY` and
    `DRIVER_CONFIG_REGISTRY`.
-5. Write clear tool docstrings — they are the agent's only source of truth for
+5. Write clear tool docstrings. They are the agent's only source of truth for
    each tool's parameters and per-protocol semantics.
 6. Lazy-import the third-party dep inside `connect()` (and any tool that needs
    it), returning a structured install hint on `ImportError`. Never import it at
    module level.
 7. Add `tests/interfaces/test_<type>.py` with full mock coverage (mock the
-   underlying library; never open a real connection — mark hardware tests
+   underlying library; never open a real connection, and mark hardware tests
    `@pytest.mark.skip`). Add `examples/configs/<type>_device.toml`.
 
 No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
@@ -575,42 +573,42 @@ No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
 
 ## 15. System Topology
 
-`system_topology` is a **shared system-level tool** (alongside the lifecycle four) that surfaces a machine-readable map of how the lab bench is physically wired — which ports connect to which, what signals flow, and what safety constraints apply.
+`system_topology` is a **shared system-level tool** (alongside the lifecycle four) that surfaces a machine-readable map of how the lab bench is physically wired: which ports connect to which, what signals flow, and what safety constraints apply.
 
 ### 15.1 Module placement
 
 The subsystem is split across three existing module homes to match LabLink conventions:
 
-- **Data models → `lablink/base.py`** — `Constraint`, `SystemNode`, `Link`, `NetEndpoint`, `Net`, `SystemTopology`, `DeviceConnections`. `ConnectResult` and `DiagnosticResult` each carry a `topology_context: DeviceConnections | None` field. `DiagnosticResult` also carries `topology_warnings: list[str]`.
-- **TOML loading → `lablink/config.py`** — `load_system() -> SystemTopology | None` (the single reader of `topology.toml`; `None` when absent; raises `ConfigError` on malformed input) and `list_configured_aliases() -> list[str]` (the single home for the config-dir glob).
-- **Graph logic → `lablink/system.py`** (new) — `device_slice(topology, alias)` and `validate_system(topology, known_aliases)`.
+- **Data models → `lablink/base.py`**: `Constraint`, `SystemNode`, `Link`, `NetEndpoint`, `Net`, `SystemTopology`, `DeviceConnections`. `ConnectResult` and `DiagnosticResult` each carry a `topology_context: DeviceConnections | None` field. `DiagnosticResult` also carries `topology_warnings: list[str]`.
+- **TOML loading → `lablink/config.py`**: `load_system() -> SystemTopology | None` (the single reader of `topology.toml`; `None` when absent; raises `ConfigError` on malformed input) and `list_configured_aliases() -> list[str]` (the single home for the config-dir glob).
+- **Graph logic → `lablink/system.py`** (new): `device_slice(topology, alias)` and `validate_system(topology, known_aliases)`.
 
 ### 15.2 Data models
 
-- `Constraint(severity, limit, note)` — `severity` is a plain `str` (not `Enum`) so it survives `asdict()` and preserves unrecognized values verbatim.
-- `SystemNode(alias?, id?, role?)` — at least one of `alias` / `id` required.
-- `Link(from_port, to_port, signal?, params, constraints)` — directed 2-endpoint connection.
-- `Net(name, signal?, params, endpoints, constraints)` — n-ary shared bus.
-- `DeviceConnections(alias, links, nets, neighbors, constraints)` — one device's topology slice; what the agent receives on `connect()` and `diagnose(alias)`.
+- `Constraint(severity, limit, note)`: `severity` is a plain `str` (not `Enum`) so it survives `asdict()` and preserves unrecognized values verbatim.
+- `SystemNode(alias?, id?, role?)`: at least one of `alias` / `id` required.
+- `Link(from_port, to_port, signal?, params, constraints)`: directed 2-endpoint connection.
+- `Net(name, signal?, params, endpoints, constraints)`: n-ary shared bus.
+- `DeviceConnections(alias, links, nets, neighbors, constraints)`: one device's topology slice, which is what the agent receives on `connect()` and `diagnose(alias)`.
 
 ### 15.3 Injection contract (extending §8.3)
 
-`connect()` and `diagnose(alias)` inject `topology_context` the same way device memory is injected — via a single `dataclasses.replace()` call. Both guard the load with `try/except ConfigError`: a malformed `topology.toml` must not break a healthy device connection or diagnosis. A device with no matching wiring receives `topology_context=None` (not an empty slice).
+`connect()` and `diagnose(alias)` inject `topology_context` the same way device memory is injected, with a single `dataclasses.replace()` call. Both guard the load with `try/except ConfigError`: a malformed `topology.toml` must not break a healthy device connection or diagnosis. A device with no matching wiring receives `topology_context=None` (not an empty slice).
 
 ### 15.4 Error isolation
 
 `load_system()` raises `ConfigError` on malformed input. Hot-path callers each catch it:
-- `connect()` / `diagnose(alias)` — catch, inject nothing, return device result unchanged.
-- `_system_audit()` — catch, record the error in `topology_warnings` (never in `action_items`); `ready` is unaffected. Topology warnings are always separate from driver-dependency `action_items` so a wiring advisory is never mistaken for a required install step.
+- `connect()` / `diagnose(alias)`: catch, inject nothing, return device result unchanged.
+- `_system_audit()`: catch, record the error in `topology_warnings` (never in `action_items`); `ready` is unaffected. Topology warnings are always separate from driver-dependency `action_items` so a wiring advisory is never mistaken for a required install step.
 
 The `system_topology` tool is the one caller that surfaces parse errors directly to the agent (its job is to expose topology problems, not hide them).
 
 ### 15.5 `validate_system()` checks
 
-1. **Unresolved port prefix** — a `link`/`net` endpoint whose prefix matches no node.
-2. **Declared-but-unconfigured device** — a node `alias` with no `<alias>.toml`.
-3. **Unknown `severity`** — a constraint whose value is outside `{info, warning, critical}`.
-4. **alias/id collision** — a passive `id` that equals a managed node's `alias` (would be silently shadowed by alias-first port resolution).
+1. **Unresolved port prefix**: a `link`/`net` endpoint whose prefix matches no node.
+2. **Declared-but-unconfigured device**: a node `alias` with no `<alias>.toml`.
+3. **Unknown `severity`**: a constraint whose value is outside `{info, warning, critical}`.
+4. **alias/id collision**: a passive `id` that equals a managed node's `alias` (would be silently shadowed by alias-first port resolution).
 
 All are soft warnings; `validate_system` never raises.
 
@@ -619,7 +617,7 @@ All are soft warnings; `validate_system` never raises.
 ## 16. Simulated Bench (`lablink/demo/`)
 
 An optional simulated bench so LabLink can be evaluated with no hardware.
-Installed via the `demo` extra (no dependencies — stdlib only) and started
+Installed via the `demo` extra (stdlib only, no dependencies) and started
 with `lablink-sim`.
 
 ### 16.1 Design constraint: no special-casing in the drivers
@@ -649,7 +647,7 @@ instruments plus a `list[Patch]` describing the cables between them.
 demonstrable: `Bench.driven_voltage()` sums the generator's instantaneous
 output through each patch feeding a DAQ channel, so enabling an output
 actually changes what the DAQ measures. `examples/topology_sim.toml` mirrors
-the default patch — **change one and change the other.**
+the default patch. **Change one and change the other.**
 
 ### 16.3 Error mapping
 
@@ -657,7 +655,7 @@ the default patch — **change one and change the other.**
 translates it into that protocol's idiom: the SCPI servers push it onto an
 error queue readable via `SYST:ERR?` (`-222` out of range, `-113` undefined
 header, `-224` illegal parameter), and the REST server returns HTTP 400.
-Simulation code never raises a LabLink exception type — `lablink/demo/` does
+Simulation code never raises a LabLink exception type; `lablink/demo/` does
 not import from `lablink.exceptions`.
 
 ---
@@ -670,14 +668,14 @@ what is it?* — so the user never has to hand-hunt a resource string.
 ### 17.1 Module placement
 
 Discovery crosses two drivers (`visa`, `serial`), so it is a **shared
-subsystem**, not a driver method — the same split the topology subsystem uses
+subsystem**, not a driver method. The topology subsystem uses the same split
 (§15.1):
 
-- **Data models → `lablink/base.py`** — `DiscoveredDevice`, `ScanResult`,
+- **Data models → `lablink/base.py`**: `DiscoveredDevice`, `ScanResult`,
   `ConfigWriteOutcome`.
-- **Sweep logic → `lablink/discovery.py`** — `scan()` and `write_configs()`,
+- **Sweep logic → `lablink/discovery.py`**: `scan()` and `write_configs()`,
   plus the pure helpers `parse_idn()` and `suggest_alias()`.
-- **Rendering → `lablink/cli.py`** — the `scan` command is a shared lifecycle
+- **Rendering → `lablink/cli.py`**: the `scan` command is a shared lifecycle
   command alongside `diagnose` and `list`; it only formats the table and the
   write report. Keeping the logic in the module means tests reach it without
   click.
@@ -687,10 +685,10 @@ shell) runs before any alias exists, and every MCP tool is alias-addressed.
 
 ### 17.2 Probe contract
 
-1. **Enumerate** — `pyvisa.ResourceManager(...).list_resources()` for VISA,
+1. **Enumerate**: `pyvisa.ResourceManager(...).list_resources()` for VISA,
    `serial.tools.list_ports.comports()` for serial ports (which also yields
    description, VID/PID and manufacturer for the report).
-2. **Probe** — open, write `*IDN?`, read the reply, close. The per-probe
+2. **Probe**: open, write `*IDN?`, read the reply, close. The per-probe
    timeout (`DEFAULT_PROBE_TIMEOUT_S`, 2s) is deliberately short so one dead
    resource cannot stall the sweep; the worst case is bounded by the number of
    candidates, not by the slowest one.
@@ -698,21 +696,21 @@ shell) runs before any alias exists, and every MCP tool is alias-addressed.
    never answers, is still returned with `identified=False` and a `detail`
    saying why. Not everything on a serial bus speaks SCPI, and "found, did not
    identify" is more actionable than a hidden device. Probes therefore catch
-   `Exception` broadly — a probe is a question, not an operation.
-4. **Suggest an alias** — `<vendor>_<model>` from the `*IDN?` fields,
+   `Exception` broadly: a probe is a question, not an operation.
+4. **Suggest an alias**: `<vendor>_<model>` from the `*IDN?` fields,
    lowercase with underscores (the §7.1 alias convention). None when the device
    did not identify.
 
 ### 17.3 Missing drivers degrade, they do not fail
 
 Each sweep lazy-imports its library and, on `ImportError`, returns no devices
-plus one `ScanResult.action_items` entry naming the extra to install —
+plus one `ScanResult.action_items` entry naming the extra to install,
 identical in tone and shape to `DiagnosticResult.action_items` (§9). The other
 sweeps still run. `lablink scan` with no extras installed prints two install
 steps and the empty-scan explanation, never a traceback.
 
 A VISA resource string that is not enumerable (a raw TCP `SOCKET` resource, a
-pty) cannot be discovered by either sweep — only probed once known. That is a
+pty) cannot be discovered by either sweep, only probed once known. That is a
 property of the buses, not of `scan`.
 
 ### 17.4 Writing configs (`--write-configs`)
@@ -721,7 +719,7 @@ property of the buses, not of `scan`.
 and a working session: one `<alias>.toml` per identified device, in the
 directory `get_config_dir()` resolves (never a hardcoded path, so
 `LABLINK_CONFIG_DIR` is honored). It returns one `ConfigWriteOutcome` per
-device in scan order — a skip is reported, never dropped.
+device in scan order. A skip is reported, never dropped.
 
 1. **Only identified devices are written.** A candidate that never answered
    `*IDN?` has no manufacturer, no model and no alias to name the file after. A
