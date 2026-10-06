@@ -5,10 +5,9 @@ codebase. It explains how to come up to speed, where the source-of-truth docs
 live, and how to keep them current.
 
 LabLink is a local-first MCP server that gives AI agents direct, structured
-control over the devices and services they talk to — test instruments
+control over the devices and services they talk to: test instruments
 (VISA/SCPI), remote systems (SSH), web APIs (REST), serial devices, and
-user-supplied Python environments. One server, many protocol drivers, one
-install.
+user-supplied Python environments.
 
 ---
 
@@ -16,14 +15,14 @@ install.
 
 Read these in order, highest-level first:
 
-1. **`README.md`** (repo root) — what LabLink is, its scope and non-goals,
+1. **`README.md`** (repo root): what LabLink is, its scope and non-goals,
    the tool surface, and config schema. The product source of truth.
-2. **`docs/ARCHITECTURE.md`** — data models, the driver contract, dispatch,
+2. **`docs/ARCHITECTURE.md`**: data models, the driver contract, dispatch,
    session and event-logging contracts, and how to add a driver. The
    architectural source of truth.
-3. **`docs/agent_docs/agent_development.md`** — coding standards, multi-driver
+3. **`docs/agent_docs/agent_development.md`**: coding standards, multi-driver
    patterns, and testing requirements. The tactical "how."
-4. **`CHANGELOG.md`** — what has shipped and recent changes. Skim before starting
+4. **`CHANGELOG.md`**: what has shipped and recent changes. Skim before starting
    work so you know the current state.
 
 ---
@@ -40,7 +39,7 @@ Keep the docs honest as the code changes.
   proceeding.
 
 ### `docs/ARCHITECTURE.md`
-- **Purpose:** the architectural spec — data models, driver ABC, registries,
+- **Purpose:** the architectural spec: data models, driver ABC, registries,
   config schema, session/streaming/event-logger contracts, dependency model.
 - **Your responsibility:** treat it as the spec. When you add a component, rename
   a module, or change how subsystems interact, update it to match. If
@@ -51,13 +50,13 @@ Keep the docs honest as the code changes.
 - **Purpose:** coding standards and conventions.
 - **Your responsibility:** follow every guideline. When the developer corrects
   you on a pattern that should hold generally, capture it here so future sessions
-  inherit it. This is a living, two-way document.
+  inherit it.
 
 ### `CHANGELOG.md`
 - **Purpose:** the public record of what changed.
 - **Your responsibility:** add a concise entry under `[Unreleased]` for any
   user-facing change (new driver, new tool, behavior change), in
-  release-note tone — not a session diary.
+  release-note tone, not as a session diary.
 
 ---
 
@@ -92,6 +91,6 @@ If you are approaching the limits of your context window during a complex task:
    for alignment.
 3. **Clarify** any ambiguity or conflict before implementing.
 4. **Implement** to the coding standards.
-5. **Update docs** — `CHANGELOG.md` for user-facing changes, `ARCHITECTURE.md`
+5. **Update docs**: `CHANGELOG.md` for user-facing changes, `ARCHITECTURE.md`
    for structural ones, `agent_development.md` for any new generalizable rule.
 6. **Deliver** for review.
