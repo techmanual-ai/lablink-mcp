@@ -30,6 +30,7 @@
 - Click root group in `lablink/cli.py`. Shared subcommands always present. Per-driver subgroups (`lablink visa ...`, `lablink ssh ...`, etc.) registered via each driver's `register_cli_commands(group)` method, mirroring the MCP tool registration pattern.
 - Status/diagnostic output goes to stderr. Command output goes to stdout.
 - CLI commands should be thin wrappers over the same per-driver code paths used by MCP tools.
+- Each CLI invocation opens and closes its own session, so a tool that consumes state left by an earlier call (`visa_read`, `serial_read`, `ssh_read_stream`) gets no CLI command. It could never see that state.
 - A CLI-only command (e.g. `scan`) still keeps its logic in a module the command calls — never in the command body. The command formats output; the module is what tests exercise without click. Behavior that crosses two drivers belongs in a shared module (`discovery.py`, `system.py`), not in one of the drivers.
 
 ## 2. Environment & Package Management

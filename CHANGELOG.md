@@ -31,6 +31,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reported as skipped — there is not enough information to write a config worth
   having.
 
+- **`visa_read` tool.** Reads a pending response from an instrument without
+  sending anything, so a long acquisition no longer has to run inside one
+  `visa_query`. Start a 30-second sweep with `visa_write(alias, "READ?")`, then
+  collect the data with `visa_read(alias, timeout_ms=40000)`. The override applies
+  to that call only. With nothing pending, the read waits out `timeout_ms` and
+  returns `timed_out=True` with `raw=None`, never an empty string. MCP only: a
+  CLI invocation opens its own session, so it could never see a response from an
+  earlier `lablink visa write`.
+
 ### Changed
 
 - **`techmanual_document_ids` is now `document_ids`.** The field is no longer
