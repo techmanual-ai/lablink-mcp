@@ -1,7 +1,6 @@
 # Contributing to LabLink
 
-Thank you for considering a contribution. This document covers the essentials
-for getting oriented, making changes, and submitting them.
+Thank you for considering a contribution.
 
 ---
 
@@ -20,7 +19,7 @@ Run the tests to confirm your environment is clean:
 pytest tests/
 ```
 
-All tests mock hardware drivers — no real instruments required.
+All tests mock the hardware drivers, so no real instruments are required.
 
 ---
 
@@ -69,7 +68,7 @@ No changes to `lablink/mcp_server.py` or `lablink/cli.py` are required.
 - Google-style docstrings. MCP tool docstrings are load-bearing: they are
   surfaced to agents as the tool description.
 - Lazy-import all third-party driver deps inside `connect()`. Missing deps must
-  return a structured `{"success": false, "error": ..., "hint": ...}` dict —
+  return a structured `{"success": false, "error": ..., "hint": ...}` dict and
   never raise across the MCP boundary.
 - Every tool call logs via `event_logger.log_event()`. Logging must never raise.
 - Tests use `unittest.mock` to mock driver libraries. No real connections in CI.

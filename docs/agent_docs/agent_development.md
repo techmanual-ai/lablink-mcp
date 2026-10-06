@@ -5,8 +5,8 @@
 ### Python
 - **Version:** Python 3.10+
 - **Style:** PEP 8 strictly.
-- **Type Hinting:** Strict type hints (`typing` module) for all function signatures. Use `Generic[ConfigT]` on `Session` and `LabLinkDriver` (see `docs/ARCHITECTURE.md`) — avoid `cast()` boilerplate inside driver methods.
-- **Docstrings:** Google Style for all modules, classes, and functions. Per-driver MCP tool docstrings are load-bearing — they are surfaced to the agent as tool descriptions. State explicitly what each parameter means for this protocol.
+- **Type Hinting:** Strict type hints (`typing` module) for all function signatures. Use `Generic[ConfigT]` on `Session` and `LabLinkDriver` (see `docs/ARCHITECTURE.md`). Avoid `cast()` boilerplate inside driver methods.
+- **Docstrings:** Google Style for all modules, classes, and functions. Per-driver MCP tool docstrings are load-bearing: they are surfaced to the agent as tool descriptions. State explicitly what each parameter means for this protocol.
 - **Linters:** Compatible with `flake8` and `black` formatting.
 
 ### TOML Config
@@ -31,7 +31,7 @@
 - Status/diagnostic output goes to stderr. Command output goes to stdout.
 - CLI commands should be thin wrappers over the same per-driver code paths used by MCP tools.
 - Each CLI invocation opens and closes its own session, so a tool that consumes state left by an earlier call (`visa_read`, `serial_read`, `ssh_read_stream`) gets no CLI command. It could never see that state.
-- A CLI-only command (e.g. `scan`) still keeps its logic in a module the command calls — never in the command body. The command formats output; the module is what tests exercise without click. Behavior that crosses two drivers belongs in a shared module (`discovery.py`, `system.py`), not in one of the drivers.
+- A CLI-only command (e.g. `scan`) still keeps its logic in a module the command calls, never in the command body. The command formats output; the module is what tests exercise without click. Behavior that crosses two drivers belongs in a shared module (`discovery.py`, `system.py`), not in one of the drivers.
 
 ## 2. Environment & Package Management
 
@@ -65,7 +65,7 @@ def connect(self, config: SshDriverConfig) -> ConnectResult:
 ### Session ownership
 - The driver's `connect()` constructs the `Session`, calls `session_registry.register(session)`, and returns `ConnectResult`. `mcp_server.connect` does not build the session.
 - The driver's `disconnect()` closes the native connection and tears down any buffer thread. The shared `disconnect()` tool calls `session_registry.deregister(alias)` after the driver's `disconnect()` returns, regardless of return value.
-- Per-driver tools look up their session via `session_registry.get(alias, expected_type=cls.type_name)`. `None` return means missing session or wrong type — return a structured error.
+- Per-driver tools look up their session via `session_registry.get(alias, expected_type=cls.type_name)`. A `None` return means a missing session or the wrong type. Return a structured error.
 
 ### Per-call timeout
 Drivers must honor a per-call `timeout_ms` kwarg on any tool where it makes sense. The pattern:
@@ -77,12 +77,12 @@ effective_timeout = timeout_ms or session.config.timeout_ms
 Never hardcode a timeout. Config `timeout_ms` is the default; the per-call kwarg overrides.
 
 ### Diagnostics
-`diagnose(config: ConfigT)` is **stateless** — it receives a config, not a session, and works whether or not a session is open. It may perform fresh test connections (TCP reachability, auth check, etc.). The no-alias system audit lives in `mcp_server.diagnose` and iterates `DRIVER_REGISTRY` calling `check_python_deps()` and `system_dep_check()` on each driver class.
+`diagnose(config: ConfigT)` is **stateless**: it receives a config, not a session, and works whether or not a session is open. It may perform fresh test connections (TCP reachability, auth check, etc.). The no-alias system audit lives in `mcp_server.diagnose` and iterates `DRIVER_REGISTRY` calling `check_python_deps()` and `system_dep_check()` on each driver class.
 
 ### Event logging
-Every tool must call `event_logger.log_event(op=..., alias=..., ...)` at every success and failure return point. Logging must never raise — `event_logger` no-ops on filesystem errors.
+Every tool must call `event_logger.log_event(op=..., alias=..., ...)` at every success and failure return point. Logging must never raise. `event_logger` no-ops on filesystem errors.
 
-If a tool logs any field that could contain a credential the agent inlined (a `command`, a URL `path`, an `error` that echoes either), pass `secrets=redaction.secret_values(config)` to `log_event`. The scrub happens at that boundary, so you never hand-redact individual fields — and you cannot leak a known secret by forgetting one. Use `redaction.contains_secret(text, secrets)` if you also want to set a `metadata.security_warning` on the agent-facing result. See `docs/ARCHITECTURE.md` §8.4.
+If a tool logs any field that could contain a credential the agent inlined (a `command`, a URL `path`, an `error` that echoes either), pass `secrets=redaction.secret_values(config)` to `log_event`. The scrub happens at that boundary, so you never hand-redact individual fields and cannot leak a known secret by forgetting one. Use `redaction.contains_secret(text, secrets)` if you also want to set a `metadata.security_warning` on the agent-facing result. See `docs/ARCHITECTURE.md` §8.4.
 
 ### Streaming drivers
 The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tools are the reference streaming implementation. Any new streaming driver must follow the five-rule contract in `docs/ARCHITECTURE.md` §11 (bounded queue with documented overflow, thread setup in `connect()` or per-driver `start_*` tool, thread teardown in `disconnect()` with `join(timeout=2.0)`, exception isolation via `session.metadata["stream_error"]`, documented batching semantics in the read tool's docstring).
@@ -91,7 +91,7 @@ The SSH driver's `ssh_start_stream` / `ssh_read_stream` / `ssh_stop_stream` tool
 
 - **Framework:** `pytest`.
 - **Requirement:** every new function in `lablink/` must have unit tests.
-- **Mocking:** use `unittest.mock` to mock `pyvisa.ResourceManager`, `paramiko.SSHClient`, `httpx.Client`, `serial.Serial`, and subprocess equivalents. Tests must never open a real connection. This includes enumeration APIs (`list_resources()`, `serial.tools.list_ports.comports()`) — a sweep that touches the real machine gives a different answer on every developer's laptop.
+- **Mocking:** use `unittest.mock` to mock `pyvisa.ResourceManager`, `paramiko.SSHClient`, `httpx.Client`, `serial.Serial`, and subprocess equivalents. Tests must never open a real connection. This includes enumeration APIs (`list_resources()`, `serial.tools.list_ports.comports()`). A sweep that touches the real machine gives a different answer on every developer's laptop.
 - **Simulating a missing extra:** `monkeypatch.setitem(sys.modules, "pyvisa", None)` makes a lazy `import pyvisa` raise `ImportError` exactly as an uninstalled extra would. Prefer it to patching `check_python_deps()` when what you are testing is the lazy-import fallback itself.
 - **Never touch the real config directory.** Any test that writes a config file must point `LABLINK_CONFIG_DIR` at a `tmp_path` (`monkeypatch.setenv`) and assert the file landed there. A test run that overwrites a developer's `~/.lablink/devices` is a bug, not a flake. The same goes for production code: resolve the directory through `config.get_config_dir()`, never a hardcoded `~/.lablink/devices`.
 - **Test location:** `tests/test_shared_tools.py` for shared lifecycle tools, `tests/test_dispatch.py` for type→driver dispatch and dep-presence behavior, `tests/interfaces/test_<type>.py` for per-driver implementations.
@@ -116,16 +116,16 @@ Per-driver tool docstrings should cover:
 - Efficiency patterns (e.g. parallel queries) where they apply
 - Where data flows (return shape, metadata fields)
 
-The VISA driver's tools are the canonical template — match their docstring depth and error-disambiguation style.
+The VISA driver's tools are the canonical template. Match their docstring depth and error-disambiguation style.
 
 ## 6. Documentation Maintenance
 
 When your changes are non-trivial:
 
-- **Update `CHANGELOG.md`** — Add a concise entry under `[Unreleased]` for any user-facing change (new driver, new tool, behavior change), in release-note tone.
-- **Update `docs/ARCHITECTURE.md`** — When the code's component map, data flow, or a documented contract changes (new module, renamed file, new driver, changed dispatch). If implementation reveals a flaw in the design, fix the doc rather than silently diverge.
-- **Update `README.md`** — When scope, the tool surface, or the config schema changes.
-- **Update this file (`agent_development.md`)** — When the developer corrects you on a pattern that should hold generally, capture it here. This document is the codified collective memory.
+- **Update `CHANGELOG.md`** with a concise entry under `[Unreleased]` for any user-facing change (new driver, new tool, behavior change), in release-note tone.
+- **Update `docs/ARCHITECTURE.md`** when the code's component map, data flow, or a documented contract changes (new module, renamed file, new driver, changed dispatch). If implementation reveals a flaw in the design, fix the doc rather than silently diverge.
+- **Update `README.md`** when scope, the tool surface, or the config schema changes.
+- **Update this file (`agent_development.md`)** when the developer corrects you on a pattern that should hold generally.
 
 ## 7. Documentation Voice
 
@@ -172,9 +172,9 @@ frame and state the thing.
 
 ### 7.3 Rule-of-three everywhere
 
-Three parallel items in sentence after sentence is a rhythm, not a fact pattern.
-Count what is actually there and write that number, whether it is two, four or
-seven.
+Three parallel items in sentence after sentence is a rhythm, and facts rarely
+come in threes that reliably. Count what is actually there and write that number,
+whether it is two, four or seven.
 
 > **Before:** Fast, reliable, and extensible.
 >
@@ -258,8 +258,8 @@ A technical doc earns trust with a number, a command, or a named limitation.
 
 - **Ambiguity:** always ask clarifying questions before implementation. Do not guess.
 - **Never invent remote facts.** IPs, hostnames, ports, file paths, and device
-  state must be discovered, not assumed — from `connect()` metadata (e.g.
-  `peer_address`), a `diagnose()`, or a read command (`hostname -I`, `ls`). A
+  state must be discovered from `connect()` metadata (e.g. `peer_address`), a
+  `diagnose()`, or a read command (`hostname -I`, `ls`), never assumed. A
   guessed value that happens to be wrong is a silent failure; treat inventing one
   as a bug.
 - **Operating remote devices:** never inline a credential in a command or path
@@ -268,17 +268,17 @@ A technical doc earns trust with a number, a command, or a named limitation.
   event log and warn, but that is a backstop, not permission. For privileged SSH
   work prefer key-based auth, an askpass helper, or passwordless sudo.
 - **Don't batch interdependent remote steps in one turn.** Sequential
-  dependencies (install → pull → run → configure) cannot run in parallel — issue
+  dependencies (install → pull → run → configure) cannot run in parallel: issue
   one step, confirm its result, then the next. Firing them together (plus
   duplicate "is it done yet?" probes) produces thrash and masks the first
   failure.
 - **Scope discipline:** do not add features, refactor, or introduce abstractions beyond what the current task requires. Scope (drivers and non-goals) is defined in `README.md`; architecture in `docs/ARCHITECTURE.md`.
-- **Design decisions:** the design principles in `docs/ARCHITECTURE.md` §2 are settled — do not revisit them without explicit instruction from the lead developer.
+- **Design decisions:** the design principles in `docs/ARCHITECTURE.md` §2 are settled. Do not revisit them without explicit instruction from the lead developer.
 - **Context documents:** be concise. Favor detail over fluff but minimize context window usage.
 - **Self-correction:** if corrected by the developer on a preference or rule, update this document to capture it for future agents.
 
 ## 9. Git & Version Control
 
 - **Commit messages:** imperative mood ("Add feature", not "Added feature").
-- **Granularity:** atomic commits — one feature or fix per commit.
+- **Granularity:** atomic commits, one feature or fix per commit.
 - **Never** skip pre-commit hooks (`--no-verify`) unless explicitly requested. If a hook fails, fix the issue and create a new commit.
