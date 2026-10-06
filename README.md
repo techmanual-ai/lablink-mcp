@@ -53,7 +53,7 @@ Per-driver tools register only when that driver's dependencies are installed.
 
 | Protocol | `type` | Transport | Operation tools | Extra | Hardware-validated |
 |----------|--------|-----------|-----------------|-------|:------------------:|
-| **VISA / SCPI** | `visa` | PyVISA (USB-TMC, TCPIP, GPIB, Serial) | `visa_query`, `visa_write` | `[visa]` | ✅ |
+| **VISA / SCPI** | `visa` | PyVISA (USB-TMC, TCPIP, GPIB, Serial) | `visa_query`, `visa_write`, `visa_read` | `[visa]` | ✅ |
 | **SSH** | `ssh` | Paramiko | `ssh_exec`, `ssh_shell_session`, `ssh_start_stream`, `ssh_read_stream`, `ssh_stop_stream` | `[ssh]` | ✅ |
 | **REST** | `rest` | httpx | `rest_get`, `rest_post`, `rest_put`, `rest_patch`, `rest_delete` | `[rest]` | ✅ |
 | **Serial** | `serial` | pyserial (RS232/RS422/RS485) | `serial_query`, `serial_write`, `serial_read`, `serial_flush` | `[serial]` | ⚪ |
@@ -265,7 +265,7 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 
 | Driver | Tools |
 |--------|-------|
-| `visa` | `visa_query`, `visa_write` |
+| `visa` | `visa_query`, `visa_write`, `visa_read` |
 | `ssh` | `ssh_exec`, `ssh_shell_session`, `ssh_start_stream`, `ssh_read_stream`, `ssh_stop_stream` |
 | `rest` | `rest_get`, `rest_post`, `rest_put`, `rest_patch`, `rest_delete` |
 | `serial` | `serial_query`, `serial_write`, `serial_read`, `serial_flush` |

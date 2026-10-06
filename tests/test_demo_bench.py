@@ -309,6 +309,37 @@ def test_visa_driver_reaches_simulator(scpi_pair) -> None:
             resource.close()
 
 
+def test_visa_read_after_write_against_simulator(scpi_pair) -> None:
+    """visa_write a query, then visa_read collects the reply; a second read
+    with nothing pending times out rather than returning an empty string."""
+    pytest.importorskip("pyvisa")
+    from lablink import session as session_registry
+    from lablink.interfaces.visa import VisaDriver, VisaDriverConfig
+
+    _, daq = scpi_pair
+    config = VisaDriverConfig(
+        alias="sim_daq",
+        type="visa",
+        timeout_ms=5000,
+        resource_string=f"TCPIP0::127.0.0.1::{daq.server_address[1]}::SOCKET",
+    )
+    driver = VisaDriver()
+    assert driver.connect(config).success
+    try:
+        assert driver.visa_write_impl("sim_daq", "READ?")["success"]
+        result = driver.visa_read_impl("sim_daq", timeout_ms=5000)
+        assert result["success"] is True
+        assert len(result["raw"].split(",")) == 8
+
+        empty = driver.visa_read_impl("sim_daq", timeout_ms=200)
+        assert empty["success"] is True
+        assert empty["timed_out"] is True
+        assert empty["raw"] is None
+    finally:
+        driver.disconnect(session_registry.get_any("sim_daq"))
+        session_registry.deregister("sim_daq")
+
+
 # ---------------------------------------------------------------------------
 # Serial front-end teardown
 # ---------------------------------------------------------------------------

@@ -375,6 +375,46 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
         log_event(op="visa_write", alias=alias, command=command, success=result.success, error=result.error)
         return asdict(result)
 
+    def visa_read_impl(self, alias: str, timeout_ms: Optional[int] = None) -> dict:
+        lookup = session_registry.lookup(alias, expected_type="visa")
+        if not lookup.found:
+            result = self._no_session_result(alias, lookup)
+            log_event(op="visa_read", alias=alias, success=False, error=result.error)
+            return asdict(result)
+
+        import pyvisa
+
+        session = lookup.session
+        # Reset the timeout from scratch every call (docs/ARCHITECTURE.md §8.2).
+        # A long acquisition-sized override is the normal case here, so it must
+        # not bleed into the next query.
+        session.raw.timeout = timeout_ms or session.config.timeout_ms
+        try:
+            response = session.raw.read().strip()
+            result = ReadResult(success=True, raw=response, format="text")
+        except pyvisa.errors.VisaIOError as exc:
+            if exc.error_code == pyvisa.constants.StatusCode.error_timeout:
+                # Nothing arrived in time — "try again", not "broken" (§5.2).
+                result = ReadResult(success=True, raw=None, timed_out=True)
+            else:
+                result = ReadResult(
+                    success=False,
+                    error=f"VISA I/O error: {exc}",
+                    hint="Check that the instrument is connected and that a command producing a response was written first.",
+                )
+        except pyvisa.Error as exc:
+            result = ReadResult(
+                success=False,
+                error=f"VISA error: {exc}",
+                hint="Unexpected VISA error. Try disconnect() and reconnect().",
+            )
+
+        log_event(
+            op="visa_read", alias=alias, response=result.raw,
+            timed_out=result.timed_out, success=result.success, error=result.error,
+        )
+        return asdict(result)
+
     @staticmethod
     def _no_session_result(alias: str, lookup: "session_registry.SessionLookup") -> ReadResult:
         if lookup.wrong_type:
@@ -429,6 +469,48 @@ class VisaDriver(LabLinkDriver[VisaDriverConfig]):
                     to the config's timeout_ms.
             """
             return driver.visa_write_impl(alias, command, timeout_ms)
+
+        @mcp.tool()
+        def visa_read(alias: str, timeout_ms: int | None = None) -> dict:
+            """Read a pending response from a VISA instrument without sending anything.
+
+            Reads whatever is already waiting in the instrument's output buffer.
+            Nothing is written, so there must be a response pending from an
+            earlier visa_write — otherwise there is nothing to read.
+
+            Use it for write-then-read-later, where a visa_query's timeout
+            would otherwise have to span the whole acquisition. For a
+            30-second sweep:
+
+                visa_write(alias, "READ?")           # starts the sweep, returns at once
+                ... work with other devices ...
+                visa_read(alias, timeout_ms=40000)   # the sweep's data; timeout sized
+                                                     # to the acquisition, with margin
+
+            Do not send this instrument another command in between: on most
+            instruments a new query discards the pending response. For an
+            ordinary command whose response comes back immediately, use
+            visa_query instead.
+
+            An empty buffer blocks for the full timeout_ms. A read with
+            nothing pending is therefore a timeout, never an empty string: it
+            returns success=True, raw=None, timed_out=True. That means "no
+            response yet": call visa_read again, or check that the command you
+            wrote actually produces a response (a query, containing '?').
+
+            Args:
+                alias: Configured device alias (must be a VISA-type alias).
+                timeout_ms: How long to wait for a response, in milliseconds;
+                    defaults to the config's timeout_ms. Size it to the
+                    acquisition you are waiting on. Applies to this call
+                    only; the next call starts from the config default again.
+
+            Returns a ReadResult dict: success, raw (the response string, or
+            None on timeout), format, timed_out, error, hint. success=False
+            only for a VISA-layer failure other than a timeout (e.g. the
+            connection dropped) — disambiguate via the hint.
+            """
+            return driver.visa_read_impl(alias, timeout_ms)
 
     def register_cli_commands(self, cli_group) -> None:
         import sys

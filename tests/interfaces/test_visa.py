@@ -211,6 +211,61 @@ class TestWrite:
         assert "VISA I/O error" in result["error"]
 
 
+class TestRead:
+    def test_success(self):
+        resource = MagicMock()
+        resource.read.return_value = "1.0,2.0,3.0\n"
+        _register_session(resource, _config())
+        result = VisaDriver().visa_read_impl("test_scope")
+        assert result["success"] is True
+        assert result["raw"] == "1.0,2.0,3.0"
+        assert result["timed_out"] is False
+        resource.write.assert_not_called()
+        resource.query.assert_not_called()
+
+    def test_empty_buffer_times_out(self):
+        resource = MagicMock()
+        resource.read.side_effect = pyvisa.errors.VisaIOError(
+            pyvisa.constants.StatusCode.error_timeout
+        )
+        _register_session(resource, _config())
+        result = VisaDriver().visa_read_impl("test_scope")
+        assert result["success"] is True
+        assert result["raw"] is None
+        assert result["timed_out"] is True
+
+    def test_non_timeout_io_error_fails(self):
+        resource = MagicMock()
+        resource.read.side_effect = pyvisa.errors.VisaIOError(
+            pyvisa.constants.StatusCode.error_connection_lost
+        )
+        _register_session(resource, _config())
+        result = VisaDriver().visa_read_impl("test_scope")
+        assert result["success"] is False
+        assert "VISA I/O error" in result["error"]
+
+    def test_no_session(self):
+        result = VisaDriver().visa_read_impl("test_scope")
+        assert result["success"] is False
+        assert "No open session" in result["error"]
+
+    def test_timeout_override_applied(self):
+        resource = MagicMock()
+        resource.read.return_value = "x\n"
+        _register_session(resource, _config())
+        VisaDriver().visa_read_impl("test_scope", timeout_ms=40000)
+        assert resource.timeout == 40000
+
+    def test_timeout_resets_to_config_default(self):
+        resource = MagicMock()
+        resource.read.return_value = "x\n"
+        _register_session(resource, _config())
+        driver = VisaDriver()
+        driver.visa_read_impl("test_scope", timeout_ms=40000)
+        driver.visa_read_impl("test_scope")
+        assert resource.timeout == 5000
+
+
 # ---------------------------------------------------------------------------
 # diagnose (per-alias, stateless)
 # ---------------------------------------------------------------------------
