@@ -106,7 +106,8 @@ lablink-mcp/
 ├── examples/
 │   ├── configs/                    # one example .toml per driver
 │   ├── topology.toml               # RF-bench topology example
-│   └── topology_sim.toml           # topology for the simulated bench
+│   ├── topology_sim.toml           # topology for the simulated bench
+│   └── demo_multiprotocol.py       # set over SCPI, read over REST, on lablink-sim
 └── pyproject.toml
 ```
 
@@ -647,7 +648,8 @@ instruments plus a `list[Patch]` describing the cables between them.
 demonstrable: `Bench.driven_voltage()` sums the generator's instantaneous
 output through each patch feeding a DAQ channel, so enabling an output
 actually changes what the DAQ measures. `examples/topology_sim.toml` mirrors
-the default patch. **Change one and change the other.**
+the default patch, and `examples/demo_multiprotocol.py` depends on it.
+**Change one and change the others.**
 
 ### 16.3 Error mapping
 

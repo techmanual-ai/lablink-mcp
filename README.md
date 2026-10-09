@@ -46,6 +46,27 @@ LabLink gives an AI agent direct, structured access to lab hardware and services
 
 ---
 
+## 🎬 Demo: set over SCPI, read over REST
+
+<!-- asciinema embed goes here -->
+
+One script sets a 1 kHz, 2.5 V sine on the simulated FG-100 over SCPI, then
+samples the simulated DAQ-8 over REST. The generator's CH1 is patched into the
+DAQ's CH0, so the REST readings peak at the 2.5 V that was set over SCPI. Run it
+from a clone:
+
+```bash
+pip install -e ".[visa,rest,demo]"
+python examples/demo_multiprotocol.py
+```
+
+It starts `lablink-sim` and calls `visa_write`, `rest_get` and
+`system_topology` the way an agent does. The simulator stops when the script
+exits, Ctrl-C included. Ports 5025, 5026 and 8080 must be free, and
+`~/.lablink` is never touched.
+
+---
+
 ## Supported Protocols
 
 Each device is addressed by an **alias** whose config `type` field selects the driver.

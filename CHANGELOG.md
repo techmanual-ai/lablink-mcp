@@ -40,6 +40,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CLI invocation opens its own session, so it could never see a response from an
   earlier `lablink visa write`.
 
+- **`examples/demo_multiprotocol.py`**: the multi-protocol demo as one
+  command. It starts `lablink-sim`, sets a 1 kHz, 2.5 V sine on the FG-100 with
+  `visa_write`, then samples DAQ-8 CH0 with `rest_get` before and after. The
+  REST readings go from about ±0.003 V to ±2.500 V. It finishes with
+  `system_topology` to show the patch cable that connects the two. Runs in
+  about 25 seconds, fits an 80-column terminal, keeps its configs in a temporary
+  directory, and stops the simulator on exit or Ctrl-C.
+
 ### Changed
 
 - **`techmanual_document_ids` is now `document_ids`.** The field is no longer
