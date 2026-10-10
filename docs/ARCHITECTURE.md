@@ -422,8 +422,13 @@ Two limitations are accepted by design:
 
 Dependencies fall into four layers:
 
-1. **Python runtime.** `uv` is the single user-facing prerequisite; it installs
-   and manages Python itself.
+1. **Python runtime.** `uv` is the single user-facing prerequisite. The
+   documented commands (`uvx --python 3.12 --from "lablink-mcp[<extras>]" <cmd>`)
+   pin a Python version, and uv downloads it when the machine has none. The pin
+   is load-bearing: without `--python`, uvx takes the first interpreter on `PATH`
+   and fails to resolve when that one is older than 3.10, as Apple's `python3`
+   is. `pip install` into an existing 3.10+ environment remains the development
+   path.
 2. **Python packages.** Optional extras per driver (`lablink-mcp[visa]`,
    `[ssh]`, `[rest]`, `[serial]`, `[all]`). All driver imports are lazy. A driver
    whose package is missing does not register its tools, and `connect()` for that
