@@ -69,11 +69,56 @@ An `external` routing stub also lets a device be handled by a vendor-supplied MC
 
 ## 📦 Install
 
+The only prerequisite is [uv](https://docs.astral.sh/uv/getting-started/installation/).
+It fetches a compatible Python and the package on first run. You don't create or
+activate a virtualenv.
+
+### Run it with `uvx`
+
+Plug in an instrument, then:
+
 ```bash
-pip install lablink-mcp          # core only (no drivers)
-pip install lablink-mcp[visa]    # + PyVISA
-pip install lablink-mcp[ssh]     # + Paramiko
-pip install lablink-mcp[all]     # all drivers
+uvx --python 3.12 --from "lablink-mcp[visa,serial]" lablink scan --write-configs
+uvx --python 3.12 --from "lablink-mcp[visa,serial]" lablink connect tektronix_mso44
+```
+
+The first command checks every VISA resource and serial port for a reply to
+`*IDN?`. It writes a config to `~/.lablink/devices/` for each instrument that
+answers and prints the `connect` command to run next. `tektronix_mso44` is an
+example; use the alias `scan` prints. [Quick Start](#-quick-start) shows the
+output.
+
+- `--from "lablink-mcp[visa,serial]"` names the package and the driver extras to
+  install with it, comma-separated. The word after it is the command to run:
+  `lablink` (the CLI), `lablink-mcp` (the MCP server) or `lablink-sim` (the
+  [simulated bench](#-try-it-with-no-hardware)).
+- Keep the quotes. zsh, the macOS default shell, reads unquoted brackets as a
+  glob pattern and fails with `no matches found`.
+- `--python 3.12` stops uvx from using whatever Python comes first on `PATH`. On a
+  Mac where the only Python is Apple's 3.9, leaving it off fails to resolve,
+  because LabLink needs 3.10 or newer.
+
+The server needs its own copy of the same extras. It registers tools only for
+drivers installed alongside it, so a server started without `[visa]` has no
+`visa_query`. [Step 5](#5-add-to-your-mcp-client) has the client config.
+
+To put `lablink`, `lablink-mcp` and `lablink-sim` on your `PATH`, which the bare
+`lablink ...` commands in the rest of this README assume:
+
+```bash
+uv tool install --python 3.12 "lablink-mcp[visa,serial]"
+```
+
+### Install with pip
+
+pip is the better fit for developing against the package or installing into an
+environment you already manage:
+
+```bash
+pip install lablink-mcp            # core only (no drivers)
+pip install "lablink-mcp[visa]"    # + PyVISA
+pip install "lablink-mcp[ssh]"     # + Paramiko
+pip install "lablink-mcp[all]"     # all drivers
 ```
 
 ---
@@ -84,7 +129,7 @@ LabLink ships a simulated bench, so you can watch an agent drive instruments
 before you connect anything real.
 
 ```bash
-pip install lablink-mcp[visa,rest,serial,demo]
+pip install "lablink-mcp[visa,rest,serial,demo]"
 lablink-sim --write-configs ~/.lablink/devices
 ```
 
@@ -229,7 +274,8 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 {
   "mcpServers": {
     "lablink-mcp": {
-      "command": "lablink-mcp"
+      "command": "uvx",
+      "args": ["--python", "3.12", "--from", "lablink-mcp[visa,serial]", "lablink-mcp"]
     }
   }
 }
@@ -241,11 +287,19 @@ lablink visa query tek_mso44 "*IDN?"     # send SCPI query
 {
   "mcpServers": {
     "lablink-mcp": {
-      "command": "lablink-mcp"
+      "command": "uvx",
+      "args": ["--python", "3.12", "--from", "lablink-mcp[visa,serial]", "lablink-mcp"]
     }
   }
 }
 ```
+
+List the extras for every driver your devices use; the server registers tools
+only for those. The client launches uvx itself, so this works on a machine with
+no virtualenv. If you installed with pip or `uv tool install`, use
+`"command": "lablink-mcp"` with no `args`. For either form, if the client
+reports that it cannot find the command, replace it with the absolute path from
+`which uvx` or `which lablink-mcp`.
 
 ---
 
